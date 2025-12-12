@@ -1,11 +1,10 @@
 // JWT Debugging Plugin for GraphiQL
 // Adds a tab to decode and inspect JWT tokens
 
-import React, { useState, useEffect } from 'react';
-import type { GraphiQLPlugin } from 'graphiql';
+import { useState, useEffect } from 'react';
 import { decodeJwt, decodeProtectedHeader } from 'jose';
 
-export function jwtDebugPlugin(): GraphiQLPlugin {
+export function jwtDebugPlugin() {
   return {
     title: 'JWT',
     icon: () => (
