@@ -38,6 +38,7 @@ function JWTDebugger() {
   const [decoded, setDecoded] = useState<DecodedJWT | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [autoDetect, setAutoDetect] = useState(true);
+  const [autoSetHeader, setAutoSetHeader] = useState(true);
 
   // Auto-detect JWT from Authorization header in GraphiQL
   useEffect(() => {
@@ -75,6 +76,32 @@ function JWTDebugger() {
     
     return () => clearInterval(interval);
   }, [autoDetect, jwtToken]);
+
+  // Auto-set Authorization header when JWT is manually entered
+  useEffect(() => {
+    if (!autoSetHeader || !jwtToken || jwtToken.trim() === '' || autoDetect) {
+      return;
+    }
+
+    try {
+      // Find and update the headers in localStorage
+      const storageKey = Object.keys(localStorage).find(key => 
+        key.includes('graphiql:headers')
+      );
+      
+      if (storageKey) {
+        const headers = localStorage.getItem(storageKey);
+        const parsed = headers ? JSON.parse(headers) : {};
+        parsed.Authorization = `Bearer ${jwtToken.trim()}`;
+        localStorage.setItem(storageKey, JSON.stringify(parsed));
+        
+        // Trigger a storage event to notify GraphiQL
+        window.dispatchEvent(new Event('storage'));
+      }
+    } catch (e) {
+      // Ignore errors
+    }
+  }, [jwtToken, autoSetHeader, autoDetect]);
 
   // Decode JWT whenever token changes
   useEffect(() => {
@@ -130,14 +157,25 @@ function JWTDebugger() {
           <label style={{ fontWeight: 'bold', fontSize: '14px' }}>
             JWT Token
           </label>
-          <label style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <input
-              type="checkbox"
-              checked={autoDetect}
-              onChange={(e) => setAutoDetect(e.target.checked)}
-            />
-            Auto-detect from Headers
-          </label>
+          <div style={{ display: 'flex', gap: '12px', fontSize: '12px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <input
+                type="checkbox"
+                checked={autoDetect}
+                onChange={(e) => setAutoDetect(e.target.checked)}
+              />
+              Auto-detect from Headers
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <input
+                type="checkbox"
+                checked={autoSetHeader}
+                onChange={(e) => setAutoSetHeader(e.target.checked)}
+                disabled={autoDetect}
+              />
+              Auto-set Authorization header
+            </label>
+          </div>
         </div>
         <textarea
           value={jwtToken}
