@@ -68,7 +68,11 @@ impl ContextExtractor for JwtExtractor {
             })
             .await?;
 
-        let current_value = key.split('.').fold(Some(claims), |value, part| {
+        // Support both '.' and '/' as path separators
+        // '/' is preferred when keys contain dots (e.g., "claims.jwt.hasura.io")
+        let separator = if key.contains('/') { '/' } else { '.' };
+        
+        let current_value = key.split(separator).fold(Some(claims), |value, part| {
             if let Some(value) = value {
                 value.get(part)
             } else {
