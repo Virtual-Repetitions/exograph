@@ -100,11 +100,11 @@ jobs:
           key: ${{ matrix.target }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Build
-        run: cargo build --target ${{ matrix.target }} --workspace --exclude postgres-resolver-dynamic --exclude postgres-builder-dynamic
+        run: cargo build --target ${{ matrix.target }} --workspace --exclude postgres-resolver-dynamic --exclude postgres-builder-dynamic --exclude server-cf-worker
       - name: Run tests
         env:
           RUST_BACKTRACE: 1
-        run: cargo test --workspace --target ${{ matrix.target }} --exclude postgres-resolver-dynamic --exclude postgres-builder-dynamic
+        run: cargo test --workspace --target ${{ matrix.target }} --exclude postgres-resolver-dynamic --exclude postgres-builder-dynamic --exclude server-cf-worker
       - name: Run integration tests
         env:
           RUST_BACKTRACE: 1
