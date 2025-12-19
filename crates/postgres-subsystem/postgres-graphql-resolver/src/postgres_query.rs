@@ -15,7 +15,8 @@ use super::{
 };
 use crate::util::to_pg_vector;
 use crate::{
-    operation_resolver::OperationSelectionResolver, order_by_mapper::OrderByParameterInput,
+    operation_resolver::{OperationSelectionResolver, ResolvedSelect},
+    order_by_mapper::OrderByParameterInput,
     sql_mapper::extract_and_map,
 };
 use async_recursion::async_recursion;
@@ -51,7 +52,7 @@ impl OperationSelectionResolver for UniqueQuery {
         field: &'a ValidatedField,
         request_context: &'a RequestContext<'a>,
         subsystem: &'a PostgresGraphQLSubsystem,
-    ) -> Result<AbstractSelect, PostgresExecutionError> {
+    ) -> Result<ResolvedSelect<'a>, PostgresExecutionError> {
         let predicate = compute_predicate(
             &self.parameters.predicate_params.iter().collect::<Vec<_>>(),
             &field.arguments,
@@ -60,7 +61,7 @@ impl OperationSelectionResolver for UniqueQuery {
         )
         .await?;
 
-        compute_select(
+        let select = compute_select(
             predicate,
             None,
             None,
@@ -70,7 +71,12 @@ impl OperationSelectionResolver for UniqueQuery {
             subsystem,
             request_context,
         )
-        .await
+        .await?;
+
+        Ok(ResolvedSelect {
+            select,
+            return_type: &self.return_type,
+        })
     }
 }
 
@@ -81,7 +87,7 @@ impl OperationSelectionResolver for CollectionQuery {
         field: &'a ValidatedField,
         request_context: &'a RequestContext<'a>,
         subsystem: &'a PostgresGraphQLSubsystem,
-    ) -> Result<AbstractSelect, PostgresExecutionError> {
+    ) -> Result<ResolvedSelect<'a>, PostgresExecutionError> {
         let CollectionQueryParameters {
             predicate_param,
             order_by_param,
@@ -91,7 +97,7 @@ impl OperationSelectionResolver for CollectionQuery {
 
         let arguments = &field.arguments;
 
-        compute_select(
+        let select = compute_select(
             compute_predicate(&[predicate_param], arguments, subsystem, request_context).await?,
             compute_order_by(order_by_param, arguments, subsystem, request_context).await?,
             extract_and_map(limit_param, arguments, subsystem, request_context).await?,
@@ -101,7 +107,12 @@ impl OperationSelectionResolver for CollectionQuery {
             subsystem,
             request_context,
         )
-        .await
+        .await?;
+
+        Ok(ResolvedSelect {
+            select,
+            return_type: &self.return_type,
+        })
     }
 }
 
@@ -264,7 +275,7 @@ async fn map_persistent_field<'content>(
 
             Ok(SelectionElement::SubSelect(
                 RelationId::ManyToOne(relation.relation_id),
-                Box::new(nested_abstract_select),
+                Box::new(nested_abstract_select.select),
             ))
         }
         PostgresRelation::OneToMany(relation) => {
@@ -293,8 +304,25 @@ async fn map_persistent_field<'content>(
 
             Ok(SelectionElement::SubSelect(
                 RelationId::OneToMany(relation.relation_id),
-                Box::new(nested_abstract_select),
+                Box::new(nested_abstract_select.select),
             ))
+        }
+        PostgresRelation::Computed(computed) => {
+            if computed.dependencies.is_empty() {
+                Ok(SelectionElement::Null)
+            } else {
+                let object_fields = computed
+                    .dependencies
+                    .iter()
+                    .map(|dependency| {
+                        (
+                            dependency.field_name.clone(),
+                            SelectionElement::Physical(dependency.column_id),
+                        )
+                    })
+                    .collect();
+                Ok(SelectionElement::Object(object_fields))
+            }
         }
         PostgresRelation::Embedded => {
             panic!("Embedded relations cannot be used in queries")
@@ -335,7 +363,7 @@ async fn map_aggregate_field<'content>(
 
         Ok(SelectionElement::SubSelect(
             RelationId::OneToMany(*relation_id),
-            Box::new(nested_abstract_select),
+            Box::new(nested_abstract_select.select),
         ))
     } else {
         // Reaching this point means our validation logic failed

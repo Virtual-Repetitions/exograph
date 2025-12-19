@@ -391,6 +391,7 @@ pub trait DataParamBuilder<D> {
                     }),
                 }
             }
+            PostgresRelation::Computed(_) => None,
         }
     }
 

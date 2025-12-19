@@ -38,12 +38,16 @@ impl SubsystemGraphQLResolver for PostgresSubsystemResolver {
         self.id
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     async fn resolve<'a>(
         &'a self,
         field: &'a ValidatedField,
         operation_type: OperationType,
         request_context: &'a RequestContext<'a>,
-        _system_resolver: &'a GraphQLSystemResolver,
+        system_resolver: &'a GraphQLSystemResolver,
     ) -> Result<Option<QueryResponse>, SubsystemResolutionError> {
         let operation_name = &field.name;
 
@@ -86,7 +90,7 @@ impl SubsystemGraphQLResolver for PostgresSubsystemResolver {
 
         match operation {
             Some(Ok(operation)) => Ok(Some(
-                resolve_operation(operation, self, request_context).await?,
+                resolve_operation(operation, field, self, request_context, system_resolver).await?,
             )),
             Some(Err(e)) => Err(e.into()),
             None => Ok(None),

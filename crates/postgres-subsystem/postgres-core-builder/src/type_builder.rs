@@ -7,25 +7,30 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0.
 
-use std::collections::HashMap;
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 
-use crate::access_builder::ResolvedAccess;
 use crate::resolved_builder::Cardinality;
+use crate::{access_builder::ResolvedAccess, computed_script::bundle_computed_script};
 use crate::{
     resolved_type::{
-        ResolvedCompositeType, ResolvedField, ResolvedFieldDefault, ResolvedFieldType,
-        ResolvedFieldTypeHelper, ResolvedType, ResolvedTypeEnv,
+        ResolvedCompositeType, ResolvedComputedField, ResolvedField, ResolvedFieldDefault,
+        ResolvedFieldType, ResolvedFieldTypeHelper, ResolvedType, ResolvedTypeEnv,
     },
     type_provider::VectorTypeHint,
 };
 use common::value::Val;
 use common::value::val::ValNumber;
 use core_model::access::AccessPredicateExpression;
+use core_model::context_type::ContextSelection;
 use core_model::primitive_type;
 use core_model::types::{Named, TypeValidationProvider};
 use postgres_core_model::access::{CreationAccessExpression, PrecheckAccessPrimitiveExpression};
 use postgres_core_model::types::{
-    EntityRepresentation, PostgresFieldDefaultValue, PostgresPrimitiveTypeKind,
+    ComputedField, ComputedFieldDependency, EntityRepresentation, PostgresFieldDefaultValue,
+    PostgresPrimitiveTypeKind,
 };
 
 use crate::{aggregate_type_builder::aggregate_type_name, shallow::Shallow};
@@ -46,7 +51,10 @@ use postgres_core_model::{
     access::{Access, DatabaseAccessPrimitiveExpression, UpdateAccessExpression},
     aggregate::{AggregateField, AggregateFieldType},
     relation::{ManyToOneRelation, OneToManyRelation, PostgresRelation, RelationCardinality},
-    types::{EntityType, PostgresField, PostgresFieldType, PostgresPrimitiveType, TypeIndex},
+    types::{
+        ComputedScript, EntityType, PostgresField, PostgresFieldType, PostgresPrimitiveType,
+        TypeIndex,
+    },
     vector_distance::{VectorDistanceField, VectorDistanceType},
 };
 
@@ -176,20 +184,16 @@ fn expand_type_fields(
 ) -> Result<(), ModelBuildingError> {
     let existing_type_id = building.get_entity_type_id(&resolved_type.name).unwrap();
 
-    let entity_fields: Result<Vec<_>, _> = resolved_type
-        .fields
-        .iter()
-        .map(|field| {
-            create_persistent_field(
-                field,
-                &existing_type_id,
-                building,
-                resolved_env,
-                expand_relations,
-            )
-        })
-        .collect();
-    let entity_fields = entity_fields?;
+    let mut entity_fields = Vec::with_capacity(resolved_type.fields.len());
+    for field in resolved_type.fields.iter() {
+        entity_fields.push(create_persistent_field(
+            field,
+            &existing_type_id,
+            building,
+            resolved_env,
+            expand_relations,
+        )?);
+    }
 
     let agg_fields = resolved_type
         .fields
@@ -259,7 +263,11 @@ fn expand_dynamic_default_values(
         resolved_type
             .fields
             .iter()
-            .flat_map(|resolved_field| {
+            .map(|resolved_field| -> Result<Option<(String, ContextSelection)>, ModelBuildingError> {
+                if resolved_field.computed.is_some() {
+                    return Ok(None);
+                }
+
                 let entity_field = existing_type
                     .fields
                     .iter()
@@ -320,24 +328,22 @@ fn expand_dynamic_default_values(
                         _ => Ok(None),
                     },
                     _ => Ok(None),
-                };
+                }?;
 
-                dynamic_default_value.map(|value| (resolved_field.name.clone(), value))
+                Ok(dynamic_default_value.map(|value| (resolved_field.name.clone(), value)))
             })
-            .collect::<Vec<_>>()
+            .collect::<Result<Vec<_>, _>>()?
     };
 
-    default_values.into_iter().for_each(|(field_name, value)| {
+    for (field_name, value) in default_values.into_iter().flatten() {
         let existing_type = &mut building.entity_types[existing_type_id];
         let existing_field = existing_type
             .fields
             .iter_mut()
             .find(|field| field.name == field_name)
             .unwrap();
-        if let Some(value) = value {
-            existing_field.default_value = Some(PostgresFieldDefaultValue::Dynamic(value));
-        }
-    });
+        existing_field.default_value = Some(PostgresFieldDefaultValue::Dynamic(value));
+    }
 
     Ok(())
 }
@@ -524,7 +530,7 @@ fn compute_access(
 fn create_persistent_field(
     field: &ResolvedField,
     type_id: &SerializableSlabIndex<EntityType>,
-    building: &SystemContextBuilding,
+    building: &mut SystemContextBuilding,
     env: &ResolvedTypeEnv,
     expand_foreign_relations: bool,
 ) -> Result<PostgresField<EntityType>, ModelBuildingError> {
@@ -562,10 +568,8 @@ fn create_persistent_field(
             }
         }?;
 
-    let relation = create_relation(field, *type_id, building, env, expand_foreign_relations)?;
-
     // Use shallow access expressions for fields at this point. Later expand_type_access will set the real expressions
-    let access = Access {
+    let placeholder_access = Access {
         creation: CreationAccessExpression {
             precheck: SerializableSlabIndex::shallow(),
         },
@@ -576,6 +580,108 @@ fn create_persistent_field(
         },
         delete: SerializableSlabIndex::shallow(),
     };
+
+    if let Some(computed) = &field.computed {
+        let script_id = get_or_insert_computed_script(computed, building)?;
+        let subsystem = computed
+            .subsystem
+            .clone()
+            .unwrap_or_else(|| "deno".to_string());
+
+        let self_type = &building.entity_types[*type_id];
+        let mut dependency_names = computed.dependencies.clone();
+        dependency_names.extend(
+            self_type
+                .pk_fields()
+                .into_iter()
+                .map(|pk_field| pk_field.name.clone()),
+        );
+
+        let resolved_type = env.get_by_key(&self_type.name).ok_or_else(|| {
+            ModelBuildingError::Generic(format!(
+                "Failed to locate resolved type for entity '{}'",
+                self_type.name
+            ))
+        })?;
+
+        let resolved_composite = match resolved_type {
+            ResolvedType::Composite(composite) => composite,
+            _ => {
+                return Err(ModelBuildingError::Generic(format!(
+                    "Resolved type '{}' is not a composite type",
+                    self_type.name
+                )));
+            }
+        };
+
+        let mut seen_dependencies = HashSet::new();
+        let mut dependencies = Vec::new();
+
+        for dependency_name in dependency_names {
+            if !seen_dependencies.insert(dependency_name.clone()) {
+                continue;
+            }
+
+            let dependency_field = resolved_composite
+                .fields
+                .iter()
+                .find(|resolved_field| resolved_field.name == dependency_name)
+                .ok_or_else(|| {
+                    ModelBuildingError::Generic(format!(
+                        "Computed field '{}' references unknown dependency field '{}'",
+                        field.name, dependency_name
+                    ))
+                })?;
+
+            if !dependency_field.self_column {
+                return Err(ModelBuildingError::Generic(format!(
+                    "Computed field '{}' dependency '{}' must refer to a column on the same table",
+                    field.name, dependency_name
+                )));
+            }
+
+            if dependency_field.column_names.len() != 1 {
+                return Err(ModelBuildingError::Generic(format!(
+                    "Computed field '{}' dependency '{}' must reference a single column",
+                    field.name, dependency_name
+                )));
+            }
+
+            let column_name = &dependency_field.column_names[0];
+            let column_id = building
+                .database
+                .get_column_id(self_type.table_id, column_name)
+                .ok_or_else(|| {
+                    ModelBuildingError::Generic(format!(
+                        "Computed field '{}' dependency '{}' refers to unknown column '{}'",
+                        field.name, dependency_name, column_name
+                    ))
+                })?;
+
+            dependencies.push(ComputedFieldDependency {
+                field_name: dependency_name,
+                column_id,
+            });
+        }
+
+        return Ok(PostgresField {
+            name: field.name.to_owned(),
+            typ: field.typ.wrap(base_field_type),
+            relation: PostgresRelation::Computed(ComputedField {
+                script_id,
+                function_name: computed.function_name.clone(),
+                subsystem,
+                dependencies,
+            }),
+            access: placeholder_access,
+            default_value: None,
+            readonly: true,
+            type_validation: None,
+            doc_comments: field.doc_comments.clone(),
+        });
+    }
+
+    let relation = create_relation(field, *type_id, building, env, expand_foreign_relations)?;
 
     let type_validation = match &field.type_hint {
         Some(th) => th.get_type_validation(),
@@ -642,7 +748,7 @@ fn create_persistent_field(
         name: field.name.to_owned(),
         typ: field.typ.wrap(base_field_type),
         relation,
-        access,
+        access: placeholder_access,
         default_value,
         readonly: field.readonly || field.update_sync,
         type_validation,
@@ -657,6 +763,10 @@ fn create_agg_field(
     env: &ResolvedTypeEnv,
     expand_foreign_relations: bool,
 ) -> Result<Option<AggregateField>, ModelBuildingError> {
+    if field.computed.is_some() {
+        return Ok(None);
+    }
+
     fn is_underlying_type_list(field_type: &FieldType<ResolvedFieldType>) -> bool {
         match field_type {
             FieldType::Plain(_) => false,
@@ -698,6 +808,10 @@ fn create_vector_distance_field(
     building: &SystemContextBuilding,
     env: &ResolvedTypeEnv,
 ) -> Option<VectorDistanceField> {
+    if field.computed.is_some() {
+        return None;
+    }
+
     match &field.type_hint {
         Some(hint) => {
             if let Some(vector_hint) =
@@ -727,6 +841,32 @@ fn create_vector_distance_field(
         }
         None => None,
     }
+}
+
+fn get_or_insert_computed_script(
+    computed: &ResolvedComputedField,
+    building: &mut SystemContextBuilding,
+) -> Result<SerializableSlabIndex<ComputedScript>, ModelBuildingError> {
+    if let Some(id) = building
+        .computed_script_ids
+        .get(&computed.source_path)
+        .copied()
+    {
+        return Ok(id);
+    }
+
+    let (script_path, script_bytes) = bundle_computed_script(Path::new(&computed.source_path))?;
+
+    let script_id = building.computed_scripts.insert(ComputedScript {
+        path: script_path.clone(),
+        definition: script_bytes,
+    });
+
+    building
+        .computed_script_ids
+        .insert(computed.source_path.clone(), script_id);
+
+    Ok(script_id)
 }
 
 fn create_relation(

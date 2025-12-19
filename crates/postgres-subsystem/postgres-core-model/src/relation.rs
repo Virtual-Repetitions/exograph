@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0.
 
-use crate::types::{EntityFieldId, EntityType};
+use crate::types::{ComputedField, EntityFieldId, EntityType};
 
 use core_model::mapped_arena::SerializableSlabIndex;
 use exo_sql::{ColumnId, ColumnPathLink, Database, ManyToOneId, OneToManyId};
@@ -33,6 +33,7 @@ pub enum PostgresRelation {
         is_pk: bool,
     },
     OneToMany(OneToManyRelation),
+    Computed(ComputedField),
     Embedded, // Such as a field in typed json
 }
 
@@ -92,6 +93,9 @@ impl PostgresRelation {
             PostgresRelation::Scalar { column_id, .. } => ColumnPathLink::Leaf(*column_id),
             PostgresRelation::ManyToOne { relation, .. } => relation.column_path_link(database),
             PostgresRelation::OneToMany(relation) => relation.column_path_link(database),
+            PostgresRelation::Computed(_) => {
+                panic!("Computed fields do not have column path links")
+            }
             PostgresRelation::Embedded => {
                 panic!("Embedded relations cannot be used in queries")
             }

@@ -18,6 +18,7 @@ use postgres_graphql_model::{
     order::{OrderByParameterType, OrderByParameterTypeKind, OrderByParameterTypeWrapper},
 };
 
+use postgres_core_model::relation::PostgresRelation;
 use postgres_core_model::types::{
     EntityRepresentation, EntityType, PostgresField, PostgresPrimitiveType, PostgresType,
 };
@@ -235,7 +236,10 @@ pub fn new_field_param(
         return None;
     }
 
-    let column_path_link = Some(entity_field.relation.column_path_link(database));
+    let column_path_link = match &entity_field.relation {
+        PostgresRelation::Computed(_) | PostgresRelation::Embedded => return None,
+        relation => Some(relation.column_path_link(database)),
+    };
 
     Some(new_param(
         &entity_field.name,

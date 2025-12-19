@@ -14,7 +14,7 @@ use super::{
 
 use postgres_core_resolver::postgres_execution_error::PostgresExecutionError;
 
-use crate::operation_resolver::OperationSelectionResolver;
+use crate::operation_resolver::{OperationSelectionResolver, ResolvedSelect};
 use async_recursion::async_recursion;
 use async_trait::async_trait;
 use common::context::RequestContext;
@@ -36,7 +36,7 @@ impl OperationSelectionResolver for AggregateQuery {
         field: &'a ValidatedField,
         request_context: &'a RequestContext<'a>,
         subsystem: &'a PostgresGraphQLSubsystem,
-    ) -> Result<AbstractSelect, PostgresExecutionError> {
+    ) -> Result<ResolvedSelect<'a>, PostgresExecutionError> {
         let AccessCheckOutcome {
             precheck_predicate: _,
             entity_predicate,
@@ -74,13 +74,16 @@ impl OperationSelectionResolver for AggregateQuery {
         )
         .await?;
 
-        Ok(AbstractSelect {
-            table_id: root_physical_table_id,
-            selection: exo_sql::Selection::Json(content_object, SelectionCardinality::One),
-            predicate,
-            order_by: None,
-            offset: None,
-            limit: None,
+        Ok(ResolvedSelect {
+            select: AbstractSelect {
+                table_id: root_physical_table_id,
+                selection: exo_sql::Selection::Json(content_object, SelectionCardinality::One),
+                predicate,
+                order_by: None,
+                offset: None,
+                limit: None,
+            },
+            return_type: &self.return_type,
         })
     }
 }

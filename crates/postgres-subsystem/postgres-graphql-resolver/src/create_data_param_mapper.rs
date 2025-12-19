@@ -184,6 +184,9 @@ async fn map_single<'a>(
                     PostgresRelation::Embedded => {
                         panic!("Embedded relations cannot be used in create operations")
                     }
+                    PostgresRelation::Computed(_) => {
+                        vec![]
+                    }
                 }
             })
         })

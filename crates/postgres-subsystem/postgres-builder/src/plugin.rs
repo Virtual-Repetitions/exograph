@@ -94,6 +94,32 @@ impl SubsystemBuilder for PostgresSubsystemBuilder {
                 },
             ),
             (
+                "computed",
+                AnnotationSpec {
+                    targets: &[AnnotationTarget::Field],
+                    no_params: false,
+                    single_params: false,
+                    mapped_params: Some(&[
+                        MappedAnnotationParamSpec {
+                            name: "source",
+                            optional: false,
+                        },
+                        MappedAnnotationParamSpec {
+                            name: "export",
+                            optional: true,
+                        },
+                        MappedAnnotationParamSpec {
+                            name: "subsystem",
+                            optional: true,
+                        },
+                        MappedAnnotationParamSpec {
+                            name: "select",
+                            optional: true,
+                        },
+                    ]),
+                },
+            ),
+            (
                 "pk",
                 AnnotationSpec {
                     targets: &[AnnotationTarget::Field],

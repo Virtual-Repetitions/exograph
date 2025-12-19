@@ -94,11 +94,20 @@ pub struct ResolvedField {
     pub update_sync: bool,
     pub readonly: bool,
     pub doc_comments: Option<String>,
+    pub computed: Option<ResolvedComputedField>,
     #[serde(skip_serializing)]
     #[serde(skip_deserializing)]
     #[serde(default = "default_span")]
     #[allow(unused)]
     pub span: Span,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ResolvedComputedField {
+    pub source_path: String,
+    pub function_name: String,
+    pub subsystem: Option<String>,
+    pub dependencies: Vec<String>,
 }
 
 // TODO: dedup?

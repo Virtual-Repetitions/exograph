@@ -18,8 +18,11 @@ use super::{
 use postgres_core_resolver::postgres_execution_error::PostgresExecutionError;
 
 use crate::{
-    create_data_param_mapper::InsertOperation, operation_resolver::OperationResolver,
-    postgres_query::compute_select, predicate_mapper::compute_predicate, sql_mapper::SQLMapper,
+    create_data_param_mapper::InsertOperation,
+    operation_resolver::{OperationResolver, PostgresResolvedOperation},
+    postgres_query::compute_select,
+    predicate_mapper::compute_predicate,
+    sql_mapper::SQLMapper,
     update_data_param_mapper::UpdateOperation,
 };
 use async_trait::async_trait;
@@ -44,7 +47,7 @@ impl OperationResolver for PostgresMutation {
         field: &'a ValidatedField,
         request_context: &'a RequestContext<'a>,
         subsystem: &'a PostgresGraphQLSubsystem,
-    ) -> Result<AbstractOperation, PostgresExecutionError> {
+    ) -> Result<PostgresResolvedOperation<'a>, PostgresExecutionError> {
         let return_type = &self.return_type;
 
         // Compute a select without any **user-specified** predicate, order-by etc. The surrounding
@@ -63,7 +66,7 @@ impl OperationResolver for PostgresMutation {
         )
         .await?;
 
-        Ok(match &self.parameters {
+        let operation = match &self.parameters {
             PostgresMutationParameters::Create(data_param) => AbstractOperation::Insert(
                 create_operation(
                     data_param,
@@ -100,6 +103,11 @@ impl OperationResolver for PostgresMutation {
                 )
                 .await?,
             ),
+        };
+
+        Ok(PostgresResolvedOperation {
+            operation,
+            return_type,
         })
     }
 }

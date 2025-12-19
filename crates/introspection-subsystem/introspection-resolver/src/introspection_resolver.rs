@@ -37,6 +37,10 @@ impl SubsystemGraphQLResolver for IntrospectionResolver {
         "introspection"
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     async fn resolve<'a>(
         &'a self,
         field: &'a ValidatedField,

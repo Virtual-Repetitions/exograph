@@ -13,7 +13,11 @@
 //! column name, here that information is encoded into an attribute of `ResolvedType`.
 //! If no @column is provided, the encoded information is set to an appropriate default value.
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    path::Path,
+};
 
 use codemap_diagnostic::{Diagnostic, Level, SpanLabel, SpanStyle};
 use postgres_core_model::types::EntityRepresentation;
@@ -25,8 +29,8 @@ use super::{
 };
 use crate::{
     resolved_type::{
-        ExplicitTypeHint, ResolvedCompositeType, ResolvedEnumType, ResolvedField,
-        ResolvedFieldDefault, ResolvedFieldType, ResolvedType, SerializableTypeHint,
+        ExplicitTypeHint, ResolvedCompositeType, ResolvedComputedField, ResolvedEnumType,
+        ResolvedField, ResolvedFieldDefault, ResolvedFieldType, ResolvedType, SerializableTypeHint,
     },
     type_provider::{PRIMITIVE_TYPE_PROVIDER_REGISTRY, validate_hint_annotations},
 };
@@ -138,6 +142,7 @@ fn resolve(
                     ct,
                     &module_schema_name,
                     module_managed,
+                    &module.base_exofile,
                     typechecked_system,
                     &mut resolved_postgres_types,
                     errors,
@@ -172,6 +177,7 @@ fn resolve_composite_type(
     ct: &AstModel<Typed>,
     module_schema_name: &Option<String>,
     module_managed: Option<bool>,
+    module_base_path: &Path,
     typechecked_system: &TypecheckedSystem,
     resolved_postgres_types: &mut MappedArena<ResolvedType>,
     errors: &mut Vec<Diagnostic>,
@@ -242,8 +248,14 @@ fn resolve_composite_type(
         let name = ct.name.clone();
         let plural_name = plural_annotation_value.unwrap_or_else(|| ct.name.to_plural()); // fallback to automatically pluralizing name
 
-        let resolved_fields =
-            resolve_composite_type_fields(ct, is_json, table_managed, typechecked_system, errors);
+        let resolved_fields = resolve_composite_type_fields(
+            ct,
+            is_json,
+            table_managed,
+            module_base_path,
+            typechecked_system,
+            errors,
+        );
 
         resolved_postgres_types.add(
             &ct.name,
@@ -270,6 +282,7 @@ fn resolve_composite_type_fields(
     ct: &AstModel<Typed>,
     is_json: bool,
     table_managed: bool,
+    module_base_path: &Path,
     typechecked_system: &TypecheckedSystem,
     errors: &mut Vec<Diagnostic>,
 ) -> Vec<ResolvedField> {
@@ -309,6 +322,43 @@ fn resolve_composite_type_fields(
                 },
             };
 
+            let typ = resolve_field_type(
+                &field.typ.to_typ(&typechecked_system.types),
+                &typechecked_system.types,
+            );
+
+            if let Some(computed_params) = field.annotations.get("computed") {
+                let resolved_computed =
+                    parse_computed_field(module_base_path, field, computed_params, errors);
+
+                if resolved_computed.is_none() {
+                    return None;
+                }
+
+                let resolved_computed = resolved_computed.unwrap();
+
+                validate_computed_field_annotations(field, update_sync, errors);
+
+                return Some(ResolvedField {
+                    name: field.name.clone(),
+                    typ,
+                    column_names: vec![],
+                    self_column: false,
+                    is_pk: false,
+                    access,
+                    type_hint: None,
+                    unique_constraints: vec![],
+                    indices: vec![],
+                    cardinality: None,
+                    default_value: None,
+                    update_sync: false,
+                    readonly: true,
+                    doc_comments: field.doc_comments.clone(),
+                    computed: Some(resolved_computed),
+                    span: field.span,
+                });
+            }
+
             let column_info =
                 compute_column_info(ct, field, &typechecked_system.types, table_managed);
 
@@ -320,11 +370,6 @@ fn resolve_composite_type_fields(
                     indices,
                     cardinality,
                 }) => {
-                    let typ = resolve_field_type(
-                        &field.typ.to_typ(&typechecked_system.types),
-                        &typechecked_system.types,
-                    );
-
                     let default_value = field
                         .default_value
                         .as_ref()
@@ -345,6 +390,7 @@ fn resolve_composite_type_fields(
                         update_sync,
                         readonly,
                         doc_comments: field.doc_comments.clone(),
+                        computed: None,
                         span: field.span,
                     })
                 }
@@ -355,6 +401,194 @@ fn resolve_composite_type_fields(
             }
         })
         .collect()
+}
+
+fn push_field_error(
+    field: &AstField<Typed>,
+    message: impl Into<String>,
+    errors: &mut Vec<Diagnostic>,
+) {
+    errors.push(Diagnostic {
+        level: Level::Error,
+        message: message.into(),
+        code: Some("C000".to_string()),
+        spans: vec![SpanLabel {
+            span: field.span,
+            style: SpanStyle::Primary,
+            label: None,
+        }],
+    });
+}
+
+fn extract_string_literal(
+    expr: &AstExpr<Typed>,
+    field: &AstField<Typed>,
+    label: &str,
+    errors: &mut Vec<Diagnostic>,
+) -> Option<String> {
+    match expr {
+        AstExpr::StringLiteral(value, _) => Some(value.clone()),
+        _ => {
+            push_field_error(
+                field,
+                format!(
+                    "Computed field '{}' parameter '{}' must be a string literal",
+                    field.name, label
+                ),
+                errors,
+            );
+            None
+        }
+    }
+}
+
+fn parse_computed_field(
+    module_base_path: &Path,
+    field: &AstField<Typed>,
+    params: &AstAnnotationParams<Typed>,
+    errors: &mut Vec<Diagnostic>,
+) -> Option<ResolvedComputedField> {
+    let map = match params {
+        AstAnnotationParams::Map(map, _) => map,
+        _ => {
+            push_field_error(
+                field,
+                format!(
+                    "Computed field '{}' must use map-style parameters (e.g. source = \"...\")",
+                    field.name
+                ),
+                errors,
+            );
+            return None;
+        }
+    };
+
+    let source_expr = match map.get("source") {
+        Some(expr) => expr,
+        None => {
+            push_field_error(
+                field,
+                format!(
+                    "Computed field '{}' must specify a 'source' parameter",
+                    field.name
+                ),
+                errors,
+            );
+            return None;
+        }
+    };
+
+    let source = extract_string_literal(source_expr, field, "source", errors)?;
+
+    let mut source_path = module_base_path.to_path_buf();
+    source_path.pop();
+    source_path.push(&source);
+
+    let canonical = match fs::canonicalize(&source_path) {
+        Ok(path) => path,
+        Err(_) => {
+            push_field_error(
+                field,
+                format!(
+                    "Unable to resolve computed field '{}' source file: {}",
+                    field.name,
+                    source_path.to_string_lossy()
+                ),
+                errors,
+            );
+            return None;
+        }
+    };
+
+    let function_name = match map.get("export") {
+        Some(expr) => extract_string_literal(expr, field, "export", errors)?,
+        None => field.name.clone(),
+    };
+
+    let subsystem = match map.get("subsystem") {
+        Some(expr) => Some(extract_string_literal(expr, field, "subsystem", errors)?),
+        None => Some("deno".to_string()),
+    };
+
+    let dependencies = match map.get("select") {
+        Some(AstExpr::StringList(list, _)) => list.clone(),
+        Some(AstExpr::StringLiteral(value, _)) => value
+            .split(',')
+            .map(|item| item.trim().to_string())
+            .filter(|item| !item.is_empty())
+            .collect(),
+        Some(other) => {
+            push_field_error(
+                field,
+                format!(
+                    "Computed field '{}' select parameter must be a list of strings, found {:?}",
+                    field.name, other
+                ),
+                errors,
+            );
+            return None;
+        }
+        None => vec![],
+    };
+
+    Some(ResolvedComputedField {
+        source_path: canonical.to_string_lossy().to_string(),
+        function_name,
+        subsystem,
+        dependencies,
+    })
+}
+
+fn validate_computed_field_annotations(
+    field: &AstField<Typed>,
+    update_sync: bool,
+    errors: &mut Vec<Diagnostic>,
+) {
+    let disallowed = [
+        ("pk", "@pk"),
+        ("column", "@column"),
+        ("relation", "@relation"),
+        ("manyToOne", "@manyToOne"),
+        ("oneToOne", "@oneToOne"),
+        ("dbtype", "@dbtype"),
+        ("index", "@index"),
+        ("unique", "@unique"),
+    ];
+
+    for (annotation, label) in disallowed {
+        if field.annotations.contains(annotation) {
+            push_field_error(
+                field,
+                format!(
+                    "Computed field '{}' cannot use the {} annotation",
+                    field.name, label
+                ),
+                errors,
+            );
+        }
+    }
+
+    if field.default_value.is_some() {
+        push_field_error(
+            field,
+            format!(
+                "Computed field '{}' cannot specify a default value",
+                field.name
+            ),
+            errors,
+        );
+    }
+
+    if update_sync {
+        push_field_error(
+            field,
+            format!(
+                "Computed field '{}' cannot use the @update annotation",
+                field.name
+            ),
+            errors,
+        );
+    }
 }
 
 fn resolve_field_default_type(
