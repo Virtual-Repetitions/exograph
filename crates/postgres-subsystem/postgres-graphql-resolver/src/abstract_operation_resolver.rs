@@ -72,7 +72,7 @@ pub async fn resolve_operation<'e>(
 
     apply_computed_fields_to_body(
         &mut response.body,
-        &return_type,
+        return_type,
         field,
         subsystem_resolver,
         system_resolver,

@@ -122,7 +122,7 @@ async fn download_deno_if_needed() -> Result<PathBuf, ModelBuildingError> {
     } else {
         "deno"
     };
-    let deno_path = exo_cache_root()
+    let _deno_path = exo_cache_root()
         .map_err(|e| {
             ModelBuildingError::Generic(format!("Failed to determine cache root directory: {e}"))
         })?

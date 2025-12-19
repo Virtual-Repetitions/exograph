@@ -192,13 +192,13 @@ async fn process_entity(
             let dependency_placeholder = obj.get(&output_name).cloned();
 
             let mut parent_snapshot = Value::Object(obj.clone());
-            if let Value::Object(ref mut parent_map) = parent_snapshot {
-                if let Some(Value::Object(dependency_values)) = dependency_placeholder.as_ref() {
-                    for (dep_name, dep_value) in dependency_values {
-                        parent_map
-                            .entry(dep_name.clone())
-                            .or_insert(dep_value.clone());
-                    }
+            if let Value::Object(ref mut parent_map) = parent_snapshot
+                && let Some(Value::Object(dependency_values)) = dependency_placeholder.as_ref()
+            {
+                for (dep_name, dep_value) in dependency_values {
+                    parent_map
+                        .entry(dep_name.clone())
+                        .or_insert(dep_value.clone());
                 }
             }
 
@@ -220,33 +220,32 @@ async fn process_entity(
 
             *entry_ref = computed_value;
 
-            if !selection_field.subfields.is_empty() {
-                if let Some(nested_return_type) = field_operation_return_type(&entity_field.typ) {
-                    process_value(
-                        entry_ref,
-                        &nested_return_type,
-                        &selection_field.subfields,
-                        subsystem_resolver,
-                        system_resolver,
-                        request_context,
-                    )
-                    .await?;
-                }
+            if !selection_field.subfields.is_empty()
+                && let Some(nested_return_type) = field_operation_return_type(&entity_field.typ)
+            {
+                process_value(
+                    entry_ref,
+                    &nested_return_type,
+                    &selection_field.subfields,
+                    subsystem_resolver,
+                    system_resolver,
+                    request_context,
+                )
+                .await?;
             }
-        } else if !selection_field.subfields.is_empty() {
-            if let Some(field_value) = obj.get_mut(&output_name) {
-                if let Some(nested_return_type) = field_operation_return_type(&entity_field.typ) {
-                    process_value(
-                        field_value,
-                        &nested_return_type,
-                        &selection_field.subfields,
-                        subsystem_resolver,
-                        system_resolver,
-                        request_context,
-                    )
-                    .await?;
-                }
-            }
+        } else if !selection_field.subfields.is_empty()
+            && let Some(field_value) = obj.get_mut(&output_name)
+            && let Some(nested_return_type) = field_operation_return_type(&entity_field.typ)
+        {
+            process_value(
+                field_value,
+                &nested_return_type,
+                &selection_field.subfields,
+                subsystem_resolver,
+                system_resolver,
+                request_context,
+            )
+            .await?;
         }
     }
 

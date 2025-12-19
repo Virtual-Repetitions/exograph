@@ -173,7 +173,8 @@ fn to_subselect_predicate(
                 if let (Some((link_l, pred_l)), Some((link_r, pred_r))) = (
                     attempt_subselect_predicate(p1),
                     attempt_subselect_predicate(p2),
-                ) && link_l == link_r {
+                ) && link_l == link_r
+                {
                     let combined = AbstractPredicate::and(pred_l, pred_r);
                     return form_subselect(link_l, combined, database, transformer);
                 }

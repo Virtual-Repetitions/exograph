@@ -329,13 +329,7 @@ fn resolve_composite_type_fields(
 
             if let Some(computed_params) = field.annotations.get("computed") {
                 let resolved_computed =
-                    parse_computed_field(module_base_path, field, computed_params, errors);
-
-                if resolved_computed.is_none() {
-                    return None;
-                }
-
-                let resolved_computed = resolved_computed.unwrap();
+                    parse_computed_field(module_base_path, field, computed_params, errors)?;
 
                 validate_computed_field_annotations(field, update_sync, errors);
 
