@@ -173,11 +173,9 @@ fn to_subselect_predicate(
                 if let (Some((link_l, pred_l)), Some((link_r, pred_r))) = (
                     attempt_subselect_predicate(p1),
                     attempt_subselect_predicate(p2),
-                ) {
-                    if link_l == link_r {
-                        let combined = AbstractPredicate::and(pred_l, pred_r);
-                        return form_subselect(link_l, combined, database, transformer);
-                    }
+                ) && link_l == link_r {
+                    let combined = AbstractPredicate::and(pred_l, pred_r);
+                    return form_subselect(link_l, combined, database, transformer);
                 }
 
                 ConcretePredicate::and(
@@ -407,7 +405,7 @@ fn attempt_subselect_predicate(
         })
     }
 
-    let result = match predicate {
+    match predicate {
         AbstractPredicate::True | AbstractPredicate::False => None,
         AbstractPredicate::Eq(l, r) => binary_operator(l, r, AbstractPredicate::Eq),
         AbstractPredicate::Neq(l, r) => binary_operator(l, r, AbstractPredicate::Neq),
@@ -455,9 +453,7 @@ fn attempt_subselect_predicate(
         AbstractPredicate::Or(l, r) => logical_binary_op(l, r, AbstractPredicate::Or),
         AbstractPredicate::Not(p) => attempt_subselect_predicate(p)
             .map(|(p_link, p_path)| (p_link, AbstractPredicate::Not(Box::new(p_path)))),
-    };
-
-    result
+    }
 }
 
 #[cfg(test)]
