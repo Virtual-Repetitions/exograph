@@ -35,8 +35,8 @@ RUN if [ -f playground/lib/package.json ]; then cd playground/lib && npm ci; fi
 # Ensure npm is in PATH for build scripts
 ENV PATH="/usr/bin:${PATH}"
 
-# Build exo-server
-RUN cargo build --release --bin exo-server
+# Build both exo CLI and exo-server
+RUN cargo build --release --bin exo --bin exo-server
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -47,7 +47,8 @@ RUN apt-get update && apt-get install -y \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the built binary
+# Copy the built binaries
+COPY --from=builder /build/target/release/exo /usr/local/bin/exo
 COPY --from=builder /build/target/release/exo-server /usr/local/bin/exo-server
 
 # Set the entrypoint
