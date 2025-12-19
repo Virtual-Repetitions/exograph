@@ -35,6 +35,7 @@ import "./index.css";
 import "graphiql/style.css";
 import "@graphiql/plugin-explorer/style.css";
 import { useTheme } from "../util/theme";
+import { jwtDebugPlugin } from "./jwt-plugin";
 
 export interface GraphiQLPlaygroundProps extends BasePlaygroundComponentProps<GraphiQLProps> {}
 
@@ -205,7 +206,7 @@ function SchemaFetchingCore(
   );
 }
 
-const plugins = [HISTORY_PLUGIN, explorerPlugin()];
+const plugins = [HISTORY_PLUGIN, explorerPlugin(), jwtDebugPlugin()];
 
 function Core({
   schema,

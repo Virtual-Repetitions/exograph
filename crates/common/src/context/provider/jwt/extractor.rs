@@ -68,12 +68,14 @@ impl ContextExtractor for JwtExtractor {
             })
             .await?;
 
+
         // Debug: Log the full JWT claims structure
         eprintln!(
             "[JWT Extractor] Full JWT claims: {}",
             serde_json::to_string_pretty(&claims).unwrap_or_else(|_| "<invalid json>".to_string())
         );
         eprintln!("[JWT Extractor] Extracting key: {}", key);
+
 
         // Support both '.' and '/' as path separators
         // For keys with '/', split ONLY on the last '/' to handle keys like "https://hasura.io/jwt/claims"
