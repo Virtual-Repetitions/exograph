@@ -9,7 +9,9 @@
 
 mod authenticator;
 mod extractor;
+mod jwks;
 mod oidc;
+mod static_key;
 
 pub use authenticator::JwtAuthenticator;
 pub use extractor::JwtExtractor;
