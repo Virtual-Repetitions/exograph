@@ -233,7 +233,9 @@ impl TestSystem {
                 }
             }
             PostgresRelation::Embedded => panic!("Cannot append field to embedded relation"),
-            PostgresRelation::Computed(_) => panic!("Cannot append field to computed relation in test system"),
+            PostgresRelation::Computed(_) => {
+                panic!("Cannot append field to computed relation in test system")
+            }
         }
     }
 }
