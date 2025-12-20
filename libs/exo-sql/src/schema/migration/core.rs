@@ -66,6 +66,13 @@ pub enum MigrationError {
     #[error("Generic error: {0}")]
     Generic(String),
 
+    #[error("Postgres error while executing `{statement}`: {source:?}")]
+    Statement {
+        statement: String,
+        #[source]
+        source: tokio_postgres::Error,
+    },
+
     #[error("Postgres error: {0}")]
     Postgres(#[from] tokio_postgres::Error),
 
@@ -211,7 +218,12 @@ impl Migration {
         } in self.statements.iter()
         {
             if !is_destructive || allow_destructive_changes {
-                transaction.execute(statement, &[]).await?;
+                if let Err(source) = transaction.execute(statement, &[]).await {
+                    return Err(MigrationError::Statement {
+                        statement: statement.clone(),
+                        source,
+                    });
+                }
             } else {
                 return Err(MigrationError::Generic(format!(
                     "Destructive change detected: {}",
