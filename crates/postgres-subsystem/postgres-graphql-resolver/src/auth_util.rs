@@ -152,7 +152,8 @@ pub(crate) async fn check_access<'a>(
         }
     };
 
-    if precheck_predicate == AbstractPredicate::False || entity_predicate == Predicate::False {
+    if precheck_predicate == AbstractPredicate::False || entity_predicate == Predicate::False
+    {
         // Hard failure, no need to proceed to restrict the predicate in SQL
         Err(PostgresExecutionError::Authorization)
     } else {

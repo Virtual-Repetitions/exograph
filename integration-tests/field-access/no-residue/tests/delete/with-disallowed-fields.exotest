@@ -12,9 +12,13 @@ auth: |
   }
 response: |
   {
-    "errors": [
-      {
-        "message": "Not authorized"
-      }
-    ]
+    "data": {
+      "deleteCustomers": [
+        {
+          "id": 1,
+          "name": "C1",
+          "internalTier": null
+        }
+      ]
+    }
   }
