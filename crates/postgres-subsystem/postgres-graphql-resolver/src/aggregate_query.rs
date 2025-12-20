@@ -8,7 +8,7 @@
 // by the Apache License, Version 2.0.
 
 use super::{
-    auth_util::{AccessCheckOutcome, check_access},
+    auth_util::{AccessCheckOutcome, check_access, check_retrieve_access},
     sql_mapper::SQLOperationKind,
 };
 
@@ -51,11 +51,21 @@ impl OperationSelectionResolver for AggregateQuery {
         )
         .await?;
 
+        let return_entity_type = self.return_type.typ(&subsystem.core_subsystem.entity_types);
+        let parent_read_predicate = check_retrieve_access(
+            &subsystem.core_subsystem.database_access_expressions[return_entity_type.access.read],
+            subsystem,
+            request_context,
+        )
+        .await?;
+        let restrict_relations = parent_read_predicate != AbstractPredicate::True;
+
         let query_predicate = super::predicate_mapper::compute_predicate(
             &[&self.parameters.predicate_param],
             &field.arguments,
             subsystem,
             request_context,
+            restrict_relations,
         )
         .await?;
         let predicate = AbstractPredicate::and(query_predicate, entity_predicate);

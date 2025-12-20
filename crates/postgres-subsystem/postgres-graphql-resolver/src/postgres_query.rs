@@ -9,7 +9,7 @@
 
 use super::predicate_mapper::compute_predicate;
 use super::{
-    auth_util::{AccessCheckOutcome, check_access},
+    auth_util::{AccessCheckOutcome, check_access, check_retrieve_access},
     sql_mapper::SQLOperationKind,
     util::Arguments,
 };
@@ -53,11 +53,21 @@ impl OperationSelectionResolver for UniqueQuery {
         request_context: &'a RequestContext<'a>,
         subsystem: &'a PostgresGraphQLSubsystem,
     ) -> Result<ResolvedSelect<'a>, PostgresExecutionError> {
+        let return_entity_type = self.return_type.typ(&subsystem.core_subsystem.entity_types);
+        let parent_read_predicate = check_retrieve_access(
+            &subsystem.core_subsystem.database_access_expressions[return_entity_type.access.read],
+            subsystem,
+            request_context,
+        )
+        .await?;
+        let restrict_relations = parent_read_predicate != AbstractPredicate::True;
+
         let predicate = compute_predicate(
             &self.parameters.predicate_params.iter().collect::<Vec<_>>(),
             &field.arguments,
             subsystem,
             request_context,
+            restrict_relations,
         )
         .await?;
 
@@ -97,8 +107,24 @@ impl OperationSelectionResolver for CollectionQuery {
 
         let arguments = &field.arguments;
 
+        let return_entity_type = self.return_type.typ(&subsystem.core_subsystem.entity_types);
+        let parent_read_predicate = check_retrieve_access(
+            &subsystem.core_subsystem.database_access_expressions[return_entity_type.access.read],
+            subsystem,
+            request_context,
+        )
+        .await?;
+        let restrict_relations = parent_read_predicate != AbstractPredicate::True;
+
         let select = compute_select(
-            compute_predicate(&[predicate_param], arguments, subsystem, request_context).await?,
+            compute_predicate(
+                &[predicate_param],
+                arguments,
+                subsystem,
+                request_context,
+                restrict_relations,
+            )
+            .await?,
             compute_order_by(order_by_param, arguments, subsystem, request_context).await?,
             extract_and_map(limit_param, arguments, subsystem, request_context).await?,
             extract_and_map(offset_param, arguments, subsystem, request_context).await?,

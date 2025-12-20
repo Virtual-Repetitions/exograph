@@ -16,7 +16,10 @@ use postgres_core_model::access::{
     CreationAccessExpression, DatabaseAccessPrimitiveExpression, PrecheckAccessPrimitiveExpression,
     UpdateAccessExpression,
 };
-use postgres_core_model::types::{EntityType, PostgresField};
+use postgres_core_model::{
+    relation::PostgresRelation,
+    types::{EntityType, PostgresField},
+};
 
 use postgres_core_resolver::postgres_execution_error::PostgresExecutionError;
 
@@ -152,8 +155,7 @@ pub(crate) async fn check_access<'a>(
         }
     };
 
-    if precheck_predicate == AbstractPredicate::False || entity_predicate == Predicate::False
-    {
+    if precheck_predicate == AbstractPredicate::False || entity_predicate == Predicate::False {
         // Hard failure, no need to proceed to restrict the predicate in SQL
         Err(PostgresExecutionError::Authorization)
     } else {
@@ -272,18 +274,27 @@ async fn check_selection_access<'a>(
             |mut acc, selection_field| async {
                 let postgres_field = return_type.field_by_name(&selection_field.name);
 
-                let field_access_predicate = match postgres_field {
+                let (field_access_predicate, is_relation_field) = match postgres_field {
                     Some(postgres_field) => {
-                        check_retrieve_access(
+                        let predicate = check_retrieve_access(
                             &subsystem.core_subsystem.database_access_expressions
                                 [postgres_field.access.read],
                             subsystem,
                             request_context,
                         )
-                        .await
+                        .await?;
+
+                        let is_relation_field = matches!(
+                            postgres_field.relation,
+                            PostgresRelation::ManyToOne { .. } | PostgresRelation::OneToMany(_)
+                        );
+
+                        (predicate, is_relation_field)
                     }
                     None => {
-                        match return_type.vector_distance_field_by_name(&selection_field.name) {
+                        let predicate = match return_type
+                            .vector_distance_field_by_name(&selection_field.name)
+                        {
                             Some(vector_distance_field) => {
                                 check_retrieve_access(
                                     &subsystem.core_subsystem.database_access_expressions
@@ -291,15 +302,21 @@ async fn check_selection_access<'a>(
                                     subsystem,
                                     request_context,
                                 )
-                                .await
+                                .await?
                             }
-                            None => Ok(AbstractPredicate::True),
-                        }
+                            None => AbstractPredicate::True,
+                        };
+
+                        (predicate, false)
                     }
-                }?;
+                };
 
                 if field_access_predicate == AbstractPredicate::False {
                     acc.unauthorized_fields.push(selection_field.output_name());
+                    return Ok(acc);
+                }
+
+                if is_relation_field {
                     Ok(acc)
                 } else {
                     acc.predicate = AbstractPredicate::and(acc.predicate, field_access_predicate);
