@@ -40,7 +40,11 @@ use super::access;
 use core_model::{
     mapped_arena::SerializableSlabIndex, primitive_type::PrimitiveType, types::FieldType,
 };
-use core_model_builder::{ast::ast_types::AstExpr, error::ModelBuildingError, typechecker::Typed};
+use core_model_builder::{
+    ast::ast_types::{AstExpr, FieldSelectionElement},
+    error::ModelBuildingError,
+    typechecker::Typed,
+};
 
 use exo_sql::{
     ColumnId, DEFAULT_VECTOR_SIZE, VectorDistanceFunction, get_mto_relation_for_columns,
@@ -277,6 +281,23 @@ fn expand_dynamic_default_values(
                 let dynamic_default_value = match resolved_field.default_value.as_ref() {
                     Some(ResolvedFieldDefault::Value(expr)) => match expr.as_ref() {
                         AstExpr::FieldSelection(selection) => {
+                            let path = selection.path();
+                            let Some(FieldSelectionElement::Identifier(context_name, ..)) =
+                                path.first()
+                            else {
+                                return Ok(None);
+                            };
+
+                            let context_name = context_name.as_str();
+                            let is_context = resolved_env
+                                .contexts
+                                .iter()
+                                .any(|(_, ctx)| ctx.name == context_name);
+
+                            if !is_context || path.len() < 2 {
+                                return Ok(None);
+                            }
+
                             let (context_selection, context_type) = selection.get_context(
                                 resolved_env.contexts,
                                 resolved_env.function_definitions,
