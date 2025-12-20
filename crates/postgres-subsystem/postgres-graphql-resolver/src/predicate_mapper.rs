@@ -461,10 +461,14 @@ impl<'a> SQLMapper<'a, AbstractPredicate> for PredicateParamInput<'a> {
                                 );
                                 let child_column_path = new_column_path.clone();
 
-                                let is_relation_parameter = matches!(
-                                    parameter.column_path_link,
-                                    Some(ColumnPathLink::Relation(_))
-                                );
+                                let (is_relation_parameter, is_one_to_many_relation) =
+                                    match &parameter.column_path_link {
+                                        Some(link @ ColumnPathLink::Relation(_)) => (
+                                            true,
+                                            link.is_one_to_many(&subsystem.core_subsystem.database),
+                                        ),
+                                        _ => (false, false),
+                                    };
 
                                 let field_access = match parameter.access {
                                     Some(ref access) => {
@@ -481,8 +485,11 @@ impl<'a> SQLMapper<'a, AbstractPredicate> for PredicateParamInput<'a> {
                                 if field_access == AbstractPredicate::False {
                                     Err(PostgresExecutionError::Authorization)
                                 } else {
-                                    let should_restrict_relations =
-                                        self.restrict_relations && !is_relation_parameter;
+                                    let should_restrict_relations = if is_relation_parameter {
+                                        self.restrict_relations && is_one_to_many_relation
+                                    } else {
+                                        self.restrict_relations
+                                    };
 
                                     let param_predicate = PredicateParamInput {
                                         param: parameter,
