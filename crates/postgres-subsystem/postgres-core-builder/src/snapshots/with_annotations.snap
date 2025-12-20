@@ -78,6 +78,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: title
             typ:
               Plain:
@@ -107,6 +108,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: venue
             typ:
               Plain:
@@ -133,6 +135,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: reserved
             typ:
               Plain:
@@ -165,6 +168,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: time
             typ:
               Plain:
@@ -194,6 +198,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: price
             typ:
               Plain:
@@ -224,6 +229,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
         table_name:
           name: custom_concerts
           schema: ~
@@ -268,6 +274,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: name
             typ:
               Plain:
@@ -294,6 +301,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: concerts
             typ:
               List:
@@ -321,6 +329,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: capacity
             typ:
               Plain:
@@ -351,6 +360,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: latitude
             typ:
               Plain:
@@ -381,6 +391,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
         table_name:
           name: venues
           schema: ~

@@ -75,6 +75,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: name
             typ:
               Plain:
@@ -101,6 +102,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
         table_name:
           name: auth_schema_tables
           schema: auth
@@ -145,6 +147,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: name
             typ:
               Plain:
@@ -171,6 +174,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
         table_name:
           name: custom_table
           schema: auth

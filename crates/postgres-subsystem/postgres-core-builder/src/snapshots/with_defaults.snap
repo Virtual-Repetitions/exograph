@@ -78,6 +78,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: title
             typ:
               Plain:
@@ -104,6 +105,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: venue
             typ:
               Plain:
@@ -131,6 +133,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: attending
             typ:
               List:
@@ -158,6 +161,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: seating
             typ:
               List:
@@ -186,6 +190,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
         table_name:
           name: concerts
           schema: ~
@@ -233,6 +238,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: name
             typ:
               Plain:
@@ -259,6 +265,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: concerts
             typ:
               List:
@@ -286,6 +293,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
         table_name:
           name: venues
           schema: ~

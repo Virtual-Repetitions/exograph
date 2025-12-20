@@ -74,6 +74,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: memberTenantId
             typ:
               Plain:
@@ -100,6 +101,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: memberName
             typ:
               Optional:
@@ -127,6 +129,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: memberships
             typ:
               List:
@@ -155,6 +158,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
         table_name:
           name: members
           schema: ~
@@ -198,6 +202,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: member
             typ:
               Plain:
@@ -225,6 +230,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
         table_name:
           name: memberships
           schema: ~
