@@ -182,7 +182,8 @@ impl<CT> FieldDefinitionProvider<PostgresGraphQLSubsystem> for PostgresField<CT>
         let arguments = match self.relation {
             PostgresRelation::Scalar { .. }
             | PostgresRelation::ManyToOne { .. }
-            | PostgresRelation::Embedded => {
+            | PostgresRelation::Embedded
+            | PostgresRelation::Computed(_) => {
                 vec![]
             }
             PostgresRelation::OneToMany(OneToManyRelation {

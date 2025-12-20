@@ -47,6 +47,10 @@ impl SubsystemGraphQLResolver for DenoSubsystemResolver {
         self.id
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     async fn resolve<'a>(
         &'a self,
         operation: &'a ValidatedField,

@@ -13,7 +13,19 @@ use core_resolver::validation::field::ValidatedField;
 use exo_sql::{AbstractOperation, AbstractSelect};
 use postgres_graphql_model::subsystem::PostgresGraphQLSubsystem;
 
+use core_model::types::OperationReturnType;
+use postgres_core_model::types::EntityType;
 use postgres_core_resolver::postgres_execution_error::PostgresExecutionError;
+
+pub struct ResolvedSelect<'a> {
+    pub select: AbstractSelect,
+    pub return_type: &'a OperationReturnType<EntityType>,
+}
+
+pub struct PostgresResolvedOperation<'a> {
+    pub operation: AbstractOperation,
+    pub return_type: &'a OperationReturnType<EntityType>,
+}
 
 #[async_trait]
 pub trait OperationSelectionResolver {
@@ -22,7 +34,7 @@ pub trait OperationSelectionResolver {
         field: &'a ValidatedField,
         request_context: &'a RequestContext<'a>,
         subsystem: &'a PostgresGraphQLSubsystem,
-    ) -> Result<AbstractSelect, PostgresExecutionError>;
+    ) -> Result<ResolvedSelect<'a>, PostgresExecutionError>;
 }
 
 #[async_trait]
@@ -32,7 +44,7 @@ pub trait OperationResolver {
         field: &'a ValidatedField,
         request_context: &'a RequestContext<'a>,
         subsystem: &'a PostgresGraphQLSubsystem,
-    ) -> Result<AbstractOperation, PostgresExecutionError>;
+    ) -> Result<PostgresResolvedOperation<'a>, PostgresExecutionError>;
 }
 
 #[async_trait]
@@ -42,9 +54,12 @@ impl<T: OperationSelectionResolver + Send + Sync> OperationResolver for T {
         field: &'a ValidatedField,
         request_context: &'a RequestContext<'a>,
         subsystem: &'a PostgresGraphQLSubsystem,
-    ) -> Result<AbstractOperation, PostgresExecutionError> {
+    ) -> Result<PostgresResolvedOperation<'a>, PostgresExecutionError> {
         self.resolve_select(field, request_context, subsystem)
             .await
-            .map(AbstractOperation::Select)
+            .map(|resolved| PostgresResolvedOperation {
+                operation: AbstractOperation::Select(resolved.select),
+                return_type: resolved.return_type,
+            })
     }
 }

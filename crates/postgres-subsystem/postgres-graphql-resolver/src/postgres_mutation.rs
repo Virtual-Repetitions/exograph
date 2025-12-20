@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 
 use super::{
-    auth_util::{AccessCheckOutcome, check_access},
+    auth_util::{AccessCheckOutcome, check_access, check_retrieve_access},
     sql_mapper::SQLOperationKind,
     util::find_arg,
 };
@@ -18,8 +18,11 @@ use super::{
 use postgres_core_resolver::postgres_execution_error::PostgresExecutionError;
 
 use crate::{
-    create_data_param_mapper::InsertOperation, operation_resolver::OperationResolver,
-    postgres_query::compute_select, predicate_mapper::compute_predicate, sql_mapper::SQLMapper,
+    create_data_param_mapper::InsertOperation,
+    operation_resolver::{OperationResolver, PostgresResolvedOperation},
+    postgres_query::compute_select,
+    predicate_mapper::compute_predicate,
+    sql_mapper::SQLMapper,
     update_data_param_mapper::UpdateOperation,
 };
 use async_trait::async_trait;
@@ -44,7 +47,7 @@ impl OperationResolver for PostgresMutation {
         field: &'a ValidatedField,
         request_context: &'a RequestContext<'a>,
         subsystem: &'a PostgresGraphQLSubsystem,
-    ) -> Result<AbstractOperation, PostgresExecutionError> {
+    ) -> Result<PostgresResolvedOperation<'a>, PostgresExecutionError> {
         let return_type = &self.return_type;
 
         // Compute a select without any **user-specified** predicate, order-by etc. The surrounding
@@ -63,7 +66,7 @@ impl OperationResolver for PostgresMutation {
         )
         .await?;
 
-        Ok(match &self.parameters {
+        let operation = match &self.parameters {
             PostgresMutationParameters::Create(data_param) => AbstractOperation::Insert(
                 create_operation(
                     data_param,
@@ -100,6 +103,11 @@ impl OperationResolver for PostgresMutation {
                 )
                 .await?,
             ),
+        };
+
+        Ok(PostgresResolvedOperation {
+            operation,
+            return_type,
         })
     }
 }
@@ -149,11 +157,23 @@ async fn delete_operation<'content>(
     )
     .await?;
 
+    let parent_read_predicate = check_retrieve_access(
+        &subsystem.core_subsystem.database_access_expressions[return_type
+            .typ(&subsystem.core_subsystem.entity_types)
+            .access
+            .read],
+        subsystem,
+        request_context,
+    )
+    .await?;
+    let restrict_relations = parent_read_predicate != AbstractPredicate::True;
+
     let arg_predicate = compute_predicate(
         &predicate_params.iter().collect::<Vec<_>>(),
         &field.arguments,
         subsystem,
         request_context,
+        restrict_relations,
     )
     .await?;
     let predicate = Predicate::and(entity_predicate, arg_predicate);
@@ -195,11 +215,23 @@ async fn update_operation<'content>(
     )
     .await?;
 
+    let parent_read_predicate = check_retrieve_access(
+        &subsystem.core_subsystem.database_access_expressions[return_type
+            .typ(&subsystem.core_subsystem.entity_types)
+            .access
+            .read],
+        subsystem,
+        request_context,
+    )
+    .await?;
+    let restrict_relations = parent_read_predicate != AbstractPredicate::True;
+
     let arg_predicate = compute_predicate(
         &predicate_param.iter().collect::<Vec<_>>(),
         &field.arguments,
         subsystem,
         request_context,
+        restrict_relations,
     )
     .await?;
     let predicate = Predicate::and(entity_predicate, arg_predicate);

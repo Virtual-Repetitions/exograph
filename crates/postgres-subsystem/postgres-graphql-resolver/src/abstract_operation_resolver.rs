@@ -7,22 +7,34 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0.
 
-use exo_sql::AbstractOperation;
 use exo_sql::database_error::DatabaseError;
 
 use common::context::RequestContext;
-use core_resolver::{QueryResponse, QueryResponseBody};
+use core_resolver::{
+    QueryResponse, QueryResponseBody, system_resolver::GraphQLSystemResolver,
+    validation::field::ValidatedField,
+};
 use postgres_core_resolver::database_helper::extractor;
 
 use postgres_core_resolver::postgres_execution_error::PostgresExecutionError;
 
 use super::PostgresSubsystemResolver;
+use crate::{
+    computed_fields::apply_computed_fields_to_body, operation_resolver::PostgresResolvedOperation,
+};
 
 pub async fn resolve_operation<'e>(
-    op: AbstractOperation,
+    resolved_operation: PostgresResolvedOperation<'e>,
+    field: &'e ValidatedField,
     subsystem_resolver: &'e PostgresSubsystemResolver,
     request_context: &'e RequestContext<'e>,
+    system_resolver: &'e GraphQLSystemResolver,
 ) -> Result<QueryResponse, PostgresExecutionError> {
+    let PostgresResolvedOperation {
+        operation,
+        return_type,
+    } = resolved_operation;
+
     let mut tx = request_context
         .system_context
         .transaction_holder
@@ -32,7 +44,7 @@ pub async fn resolve_operation<'e>(
     let result = subsystem_resolver
         .executor
         .execute(
-            op,
+            operation,
             &mut tx,
             &subsystem_resolver.subsystem.core_subsystem.database,
         )
@@ -53,8 +65,20 @@ pub async fn resolve_operation<'e>(
         Err(PostgresExecutionError::NonUniqueResult(result.len()))
     }?;
 
-    Ok(QueryResponse {
+    let mut response = QueryResponse {
         body,
-        headers: vec![], // we shouldn't get any HTTP headers from a SQL op
-    })
+        headers: vec![],
+    };
+
+    apply_computed_fields_to_body(
+        &mut response.body,
+        return_type,
+        field,
+        subsystem_resolver,
+        system_resolver,
+        request_context,
+    )
+    .await?;
+
+    Ok(response)
 }

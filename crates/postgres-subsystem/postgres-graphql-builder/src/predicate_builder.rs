@@ -234,6 +234,13 @@ fn expand_entity_type(
         field: &PostgresField<EntityType>,
         building: &SystemContextBuilding,
     ) -> bool {
+        if matches!(
+            field.relation,
+            PostgresRelation::Computed(_) | PostgresRelation::Embedded
+        ) {
+            return false;
+        }
+
         let field_type_id = &field.typ.innermost().type_id;
         if let TypeIndex::Composite(index) = field_type_id {
             let field_type = &building.core_subsystem.entity_types[*index];

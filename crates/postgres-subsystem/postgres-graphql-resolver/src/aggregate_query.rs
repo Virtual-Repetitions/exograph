@@ -8,13 +8,13 @@
 // by the Apache License, Version 2.0.
 
 use super::{
-    auth_util::{AccessCheckOutcome, check_access},
+    auth_util::{AccessCheckOutcome, check_access, check_retrieve_access},
     sql_mapper::SQLOperationKind,
 };
 
 use postgres_core_resolver::postgres_execution_error::PostgresExecutionError;
 
-use crate::operation_resolver::OperationSelectionResolver;
+use crate::operation_resolver::{OperationSelectionResolver, ResolvedSelect};
 use async_recursion::async_recursion;
 use async_trait::async_trait;
 use common::context::RequestContext;
@@ -36,7 +36,7 @@ impl OperationSelectionResolver for AggregateQuery {
         field: &'a ValidatedField,
         request_context: &'a RequestContext<'a>,
         subsystem: &'a PostgresGraphQLSubsystem,
-    ) -> Result<AbstractSelect, PostgresExecutionError> {
+    ) -> Result<ResolvedSelect<'a>, PostgresExecutionError> {
         let AccessCheckOutcome {
             precheck_predicate: _,
             entity_predicate,
@@ -51,11 +51,21 @@ impl OperationSelectionResolver for AggregateQuery {
         )
         .await?;
 
+        let return_entity_type = self.return_type.typ(&subsystem.core_subsystem.entity_types);
+        let parent_read_predicate = check_retrieve_access(
+            &subsystem.core_subsystem.database_access_expressions[return_entity_type.access.read],
+            subsystem,
+            request_context,
+        )
+        .await?;
+        let restrict_relations = parent_read_predicate != AbstractPredicate::True;
+
         let query_predicate = super::predicate_mapper::compute_predicate(
             &[&self.parameters.predicate_param],
             &field.arguments,
             subsystem,
             request_context,
+            restrict_relations,
         )
         .await?;
         let predicate = AbstractPredicate::and(query_predicate, entity_predicate);
@@ -74,13 +84,16 @@ impl OperationSelectionResolver for AggregateQuery {
         )
         .await?;
 
-        Ok(AbstractSelect {
-            table_id: root_physical_table_id,
-            selection: exo_sql::Selection::Json(content_object, SelectionCardinality::One),
-            predicate,
-            order_by: None,
-            offset: None,
-            limit: None,
+        Ok(ResolvedSelect {
+            select: AbstractSelect {
+                table_id: root_physical_table_id,
+                selection: exo_sql::Selection::Json(content_object, SelectionCardinality::One),
+                predicate,
+                order_by: None,
+                offset: None,
+                limit: None,
+            },
+            return_type: &self.return_type,
         })
     }
 }

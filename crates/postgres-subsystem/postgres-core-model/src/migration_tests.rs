@@ -24,6 +24,11 @@ use core_plugin_shared::{
 #[cfg_attr(not(target_family = "wasm"), tokio::test)]
 #[cfg_attr(target_family = "wasm", wasm_bindgen_test::wasm_bindgen_test)]
 async fn all_tests() {
+    if cfg!(not(target_os = "linux")) {
+        println!("Skipping migration tests on non-Linux host");
+        return;
+    }
+
     common::test_support::run_tests(
         env!("CARGO_MANIFEST_DIR"),
         "_EXO_DEV_MIGRATION_TEST_FILTER",

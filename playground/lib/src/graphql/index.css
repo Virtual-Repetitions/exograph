@@ -66,3 +66,19 @@
 .error-message .graphiql-button {
   border: 1px solid;
 }
+
+.graphiql-container section.graphiql-doc-explorer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.graphiql-container section.graphiql-doc-explorer .graphiql-doc-explorer-header {
+  flex-shrink: 0;
+}
+
+.graphiql-container section.graphiql-doc-explorer .graphiql-doc-explorer-content {
+  flex: 1;
+  overflow-y: auto;
+}

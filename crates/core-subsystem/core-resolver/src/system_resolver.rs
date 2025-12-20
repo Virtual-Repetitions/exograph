@@ -100,6 +100,16 @@ impl GraphQLSystemResolver {
         }
     }
 
+    pub fn find_subsystem_resolver(
+        &self,
+        id: &str,
+    ) -> Option<Arc<dyn SubsystemGraphQLResolver + Send + Sync>> {
+        self.subsystem_resolvers
+            .iter()
+            .find(|resolver| resolver.id() == id)
+            .map(Arc::clone)
+    }
+
     /// Resolve the provided top-level operation (which may contain multiple queries, mutations, or subscription).
     ///
     /// Goes through the FieldResolver for ValidatedOperation (and thus get free support for `resolve_fields`)

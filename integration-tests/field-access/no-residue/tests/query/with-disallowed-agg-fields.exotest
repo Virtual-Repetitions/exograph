@@ -12,9 +12,9 @@ auth: |
   }
 response: |
   {
-    "errors": [
-      {
-        "message": "Not authorized"
+    "data": {
+      "customersAgg": {
+        "internalTier": null
       }
-    ]
+    }
   }

@@ -36,10 +36,100 @@ use crate::util::to_pg_vector;
 
 use postgres_core_resolver::postgres_execution_error::PostgresExecutionError;
 
+fn prefix_column_path(column_path: ColumnPath, prefix: &PhysicalColumnPath) -> ColumnPath {
+    match column_path {
+        ColumnPath::Physical(path) => ColumnPath::Physical(prefix.clone().join(path)),
+        ColumnPath::Predicate(predicate) => {
+            ColumnPath::Predicate(Box::new(prefix_predicate(*predicate, prefix)))
+        }
+        other => other,
+    }
+}
+
+fn prefix_predicate(
+    predicate: AbstractPredicate,
+    prefix: &PhysicalColumnPath,
+) -> AbstractPredicate {
+    match predicate {
+        AbstractPredicate::True | AbstractPredicate::False => predicate,
+        AbstractPredicate::Eq(l, r) => {
+            AbstractPredicate::Eq(prefix_column_path(l, prefix), prefix_column_path(r, prefix))
+        }
+        AbstractPredicate::Neq(l, r) => {
+            AbstractPredicate::Neq(prefix_column_path(l, prefix), prefix_column_path(r, prefix))
+        }
+        AbstractPredicate::Lt(l, r) => {
+            AbstractPredicate::Lt(prefix_column_path(l, prefix), prefix_column_path(r, prefix))
+        }
+        AbstractPredicate::Lte(l, r) => {
+            AbstractPredicate::Lte(prefix_column_path(l, prefix), prefix_column_path(r, prefix))
+        }
+        AbstractPredicate::Gt(l, r) => {
+            AbstractPredicate::Gt(prefix_column_path(l, prefix), prefix_column_path(r, prefix))
+        }
+        AbstractPredicate::Gte(l, r) => {
+            AbstractPredicate::Gte(prefix_column_path(l, prefix), prefix_column_path(r, prefix))
+        }
+        AbstractPredicate::In(l, r) => {
+            AbstractPredicate::In(prefix_column_path(l, prefix), prefix_column_path(r, prefix))
+        }
+        AbstractPredicate::StringLike(l, r, cs) => AbstractPredicate::StringLike(
+            prefix_column_path(l, prefix),
+            prefix_column_path(r, prefix),
+            cs,
+        ),
+        AbstractPredicate::StringStartsWith(l, r) => AbstractPredicate::StringStartsWith(
+            prefix_column_path(l, prefix),
+            prefix_column_path(r, prefix),
+        ),
+        AbstractPredicate::StringEndsWith(l, r) => AbstractPredicate::StringEndsWith(
+            prefix_column_path(l, prefix),
+            prefix_column_path(r, prefix),
+        ),
+        AbstractPredicate::JsonContains(l, r) => AbstractPredicate::JsonContains(
+            prefix_column_path(l, prefix),
+            prefix_column_path(r, prefix),
+        ),
+        AbstractPredicate::JsonContainedBy(l, r) => AbstractPredicate::JsonContainedBy(
+            prefix_column_path(l, prefix),
+            prefix_column_path(r, prefix),
+        ),
+        AbstractPredicate::JsonMatchKey(l, r) => AbstractPredicate::JsonMatchKey(
+            prefix_column_path(l, prefix),
+            prefix_column_path(r, prefix),
+        ),
+        AbstractPredicate::JsonMatchAnyKey(l, r) => AbstractPredicate::JsonMatchAnyKey(
+            prefix_column_path(l, prefix),
+            prefix_column_path(r, prefix),
+        ),
+        AbstractPredicate::JsonMatchAllKeys(l, r) => AbstractPredicate::JsonMatchAllKeys(
+            prefix_column_path(l, prefix),
+            prefix_column_path(r, prefix),
+        ),
+        AbstractPredicate::VectorDistance(c1, c2, distance_fn, comparator, threshold) => {
+            AbstractPredicate::VectorDistance(
+                prefix_column_path(c1, prefix),
+                prefix_column_path(c2, prefix),
+                distance_fn,
+                comparator,
+                prefix_column_path(threshold, prefix),
+            )
+        }
+        AbstractPredicate::And(l, r) => {
+            AbstractPredicate::and(prefix_predicate(*l, prefix), prefix_predicate(*r, prefix))
+        }
+        AbstractPredicate::Or(l, r) => {
+            AbstractPredicate::or(prefix_predicate(*l, prefix), prefix_predicate(*r, prefix))
+        }
+        AbstractPredicate::Not(p) => AbstractPredicate::Not(Box::new(prefix_predicate(*p, prefix))),
+    }
+}
+
 #[derive(Debug)]
 struct PredicateParamInput<'a> {
     pub param: &'a PredicateParameter,
     pub parent_column_path: Option<PhysicalColumnPath>,
+    pub restrict_relations: bool,
 }
 
 #[async_trait]
@@ -51,6 +141,23 @@ impl<'a> SQLMapper<'a, AbstractPredicate> for PredicateParamInput<'a> {
         request_context: &'a RequestContext<'a>,
     ) -> Result<AbstractPredicate, PostgresExecutionError> {
         let parameter_type = &subsystem.predicate_types[self.param.typ.innermost().type_id];
+
+        let underlying_entity_access = if let Some(entity_id) = parameter_type.underlying_type {
+            let entity_type = &subsystem.core_subsystem.entity_types[entity_id];
+            let predicate = check_retrieve_access(
+                &subsystem.core_subsystem.database_access_expressions[entity_type.access.read],
+                subsystem,
+                request_context,
+            )
+            .await?;
+
+            if predicate == AbstractPredicate::False {
+                return Err(PostgresExecutionError::Authorization);
+            }
+            Some(predicate)
+        } else {
+            None
+        };
 
         match &parameter_type.kind {
             PredicateParameterTypeKind::ImplicitEqual => {
@@ -294,6 +401,7 @@ impl<'a> SQLMapper<'a, AbstractPredicate> for PredicateParamInput<'a> {
                                         PredicateParamInput {
                                             param: self.param,
                                             parent_column_path: self.parent_column_path.clone(),
+                                            restrict_relations: self.restrict_relations,
                                         }
                                         .to_sql(
                                             argument,
@@ -323,6 +431,7 @@ impl<'a> SQLMapper<'a, AbstractPredicate> for PredicateParamInput<'a> {
                                 let arg_predicate = PredicateParamInput {
                                     param: self.param,
                                     parent_column_path: self.parent_column_path,
+                                    restrict_relations: self.restrict_relations,
                                 }
                                 .to_sql(logical_op_argument_value, subsystem, request_context)
                                 .await?;
@@ -350,6 +459,16 @@ impl<'a> SQLMapper<'a, AbstractPredicate> for PredicateParamInput<'a> {
                                     &self.parent_column_path,
                                     &self.param.column_path_link,
                                 );
+                                let child_column_path = new_column_path.clone();
+
+                                let (is_relation_parameter, is_one_to_many_relation) =
+                                    match &parameter.column_path_link {
+                                        Some(link @ ColumnPathLink::Relation(_)) => (
+                                            true,
+                                            link.is_one_to_many(&subsystem.core_subsystem.database),
+                                        ),
+                                        _ => (false, false),
+                                    };
 
                                 let field_access = match parameter.access {
                                     Some(ref access) => {
@@ -363,21 +482,50 @@ impl<'a> SQLMapper<'a, AbstractPredicate> for PredicateParamInput<'a> {
                                     }
                                     None => AbstractPredicate::True,
                                 };
-
-                                if field_access == Predicate::False {
+                                if field_access == AbstractPredicate::False {
                                     Err(PostgresExecutionError::Authorization)
                                 } else {
+                                    let should_restrict_relations = if is_relation_parameter {
+                                        self.restrict_relations && is_one_to_many_relation
+                                    } else {
+                                        self.restrict_relations
+                                    };
+
                                     let param_predicate = PredicateParamInput {
                                         param: parameter,
-                                        parent_column_path: new_column_path,
+                                        parent_column_path: child_column_path,
+                                        restrict_relations: should_restrict_relations,
                                     }
                                     .to_sql(arg, subsystem, request_context)
                                     .await?;
 
-                                    Ok(AbstractPredicate::and(
-                                        field_access,
-                                        AbstractPredicate::and(acc, param_predicate),
-                                    ))
+                                    let combined_param_predicate = if should_restrict_relations {
+                                        if let (Some(rel_predicate), Some(column_path)) = (
+                                            underlying_entity_access.clone(),
+                                            new_column_path.as_ref(),
+                                        ) {
+                                            let prefixed =
+                                                prefix_predicate(rel_predicate, column_path);
+                                            AbstractPredicate::and(prefixed, param_predicate)
+                                        } else if let Some(rel_predicate) =
+                                            underlying_entity_access.clone()
+                                        {
+                                            AbstractPredicate::and(rel_predicate, param_predicate)
+                                        } else {
+                                            param_predicate
+                                        }
+                                    } else {
+                                        param_predicate
+                                    };
+
+                                    if is_relation_parameter {
+                                        Ok(AbstractPredicate::and(acc, combined_param_predicate))
+                                    } else {
+                                        Ok(AbstractPredicate::and(
+                                            field_access,
+                                            AbstractPredicate::and(acc, combined_param_predicate),
+                                        ))
+                                    }
                                 }
                             })
                             .await
@@ -458,12 +606,14 @@ pub async fn compute_predicate<'a>(
     arguments: &'a Arguments,
     subsystem: &'a PostgresGraphQLSubsystem,
     request_context: &'a RequestContext<'a>,
+    restrict_relations: bool,
 ) -> Result<AbstractPredicate, PostgresExecutionError> {
     let predicates = futures::future::try_join_all(params.iter().map(|param| async {
         extract_and_map(
             PredicateParamInput {
                 param,
                 parent_column_path: None,
+                restrict_relations,
             },
             arguments,
             subsystem,
