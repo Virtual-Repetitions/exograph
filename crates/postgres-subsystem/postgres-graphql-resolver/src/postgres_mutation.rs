@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 
 use super::{
-    auth_util::{AccessCheckOutcome, check_access},
+    auth_util::{AccessCheckOutcome, check_access, check_retrieve_access},
     sql_mapper::SQLOperationKind,
     util::find_arg,
 };
@@ -157,11 +157,23 @@ async fn delete_operation<'content>(
     )
     .await?;
 
+    let parent_read_predicate = check_retrieve_access(
+        &subsystem.core_subsystem.database_access_expressions[return_type
+            .typ(&subsystem.core_subsystem.entity_types)
+            .access
+            .read],
+        subsystem,
+        request_context,
+    )
+    .await?;
+    let restrict_relations = parent_read_predicate != AbstractPredicate::True;
+
     let arg_predicate = compute_predicate(
         &predicate_params.iter().collect::<Vec<_>>(),
         &field.arguments,
         subsystem,
         request_context,
+        restrict_relations,
     )
     .await?;
     let predicate = Predicate::and(entity_predicate, arg_predicate);
@@ -203,11 +215,23 @@ async fn update_operation<'content>(
     )
     .await?;
 
+    let parent_read_predicate = check_retrieve_access(
+        &subsystem.core_subsystem.database_access_expressions[return_type
+            .typ(&subsystem.core_subsystem.entity_types)
+            .access
+            .read],
+        subsystem,
+        request_context,
+    )
+    .await?;
+    let restrict_relations = parent_read_predicate != AbstractPredicate::True;
+
     let arg_predicate = compute_predicate(
         &predicate_param.iter().collect::<Vec<_>>(),
         &field.arguments,
         subsystem,
         request_context,
+        restrict_relations,
     )
     .await?;
     let predicate = Predicate::and(entity_predicate, arg_predicate);
