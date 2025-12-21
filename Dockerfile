@@ -38,8 +38,8 @@ ENV PATH="/usr/bin:${PATH}"
 # Build both exo CLI and exo-server
 RUN cargo build --release --bin exo --bin exo-server
 
-# Runtime stage
-FROM debian:bookworm-slim
+# Runtime stage (use sid to match glibc version from rust:<version>-slim)
+FROM debian:sid-slim
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
