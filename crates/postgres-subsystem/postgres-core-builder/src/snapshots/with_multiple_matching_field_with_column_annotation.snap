@@ -75,6 +75,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: title
             typ:
               Plain:
@@ -101,6 +102,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: ticket_office
             typ:
               Plain:
@@ -127,6 +129,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: main
             typ:
               Plain:
@@ -153,6 +156,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
         table_name:
           name: concerts
           schema: ~
@@ -197,6 +201,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: name
             typ:
               Plain:
@@ -223,6 +228,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: ticket_events
             typ:
               List:
@@ -250,6 +256,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: main_events
             typ:
               List:
@@ -277,6 +284,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
         table_name:
           name: venues
           schema: ~

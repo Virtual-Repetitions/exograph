@@ -1,5 +1,6 @@
 pub mod access;
 pub mod aggregate_type_builder;
+mod computed_script;
 pub mod database_builder;
 pub mod naming;
 pub mod resolved_builder;

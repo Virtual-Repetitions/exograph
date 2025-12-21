@@ -34,7 +34,7 @@ use postgres_core_model::{
 
 use crate::cast;
 
-fn normalize_column_path(mut column_path: PhysicalColumnPath) -> PhysicalColumnPath {
+fn normalize_column_path(column_path: PhysicalColumnPath) -> PhysicalColumnPath {
     let mut segments = Vec::new();
     let mut remaining = Some(column_path.clone());
 
@@ -57,7 +57,7 @@ fn normalize_column_path(mut column_path: PhysicalColumnPath) -> PhysicalColumnP
     };
 
     let mut iter = segments.into_iter();
-    let rebuilt = match iter.next() {
+    match iter.next() {
         Some(first) => {
             let mut path = PhysicalColumnPath::init(first);
             for segment in iter {
@@ -66,9 +66,7 @@ fn normalize_column_path(mut column_path: PhysicalColumnPath) -> PhysicalColumnP
             path.push(normalized_last)
         }
         None => PhysicalColumnPath::init(normalized_last),
-    };
-
-    rebuilt
+    }
 }
 
 // Only to get around the orphan rule while implementing AccessSolver

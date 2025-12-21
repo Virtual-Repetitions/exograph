@@ -515,12 +515,11 @@ fn compute_function_expr(
     fn normalize_single_relation(path: PhysicalColumnPath) -> PhysicalColumnPath {
         let (head, tail) = path.split_head();
 
-        if tail.is_none() {
-            if let ColumnPathLink::Relation(relation) = head {
-                if relation.column_pairs.len() == 1 {
-                    return PhysicalColumnPath::leaf(relation.column_pairs[0].self_column_id);
-                }
-            }
+        if tail.is_none()
+            && let ColumnPathLink::Relation(relation) = head
+            && relation.column_pairs.len() == 1
+        {
+            return PhysicalColumnPath::leaf(relation.column_pairs[0].self_column_id);
         }
 
         path

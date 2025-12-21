@@ -16,6 +16,7 @@ import React, {
   useMemo,
 } from "react";
 import { GraphiQL, HISTORY_PLUGIN } from "graphiql";
+import { KEY_MAP } from "@graphiql/react";
 import {
   Fetcher,
   FetcherOpts,
@@ -36,6 +37,9 @@ import "graphiql/style.css";
 import "@graphiql/plugin-explorer/style.css";
 import { useTheme } from "../util/theme";
 import { jwtDebugPlugin } from "./jwt-plugin";
+
+// Align Quick Search with Cmd+K / Ctrl+K instead of requiring Alt.
+KEY_MAP.searchInDocs.key = "Ctrl-K";
 
 export interface GraphiQLPlaygroundProps extends BasePlaygroundComponentProps<GraphiQLProps> {}
 

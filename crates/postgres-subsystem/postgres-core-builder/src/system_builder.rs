@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0.
 
-use std::sync::Mutex;
+use std::{collections::HashMap, sync::Mutex};
 
 use core_model::{
     access::AccessPredicateExpression,
@@ -19,7 +19,7 @@ use postgres_core_model::{
     access::PrecheckAccessPrimitiveExpression,
     aggregate::AggregateType,
     subsystem::PostgresCoreSubsystem,
-    types::{EntityType, PostgresPrimitiveType},
+    types::{ComputedScript, EntityType, PostgresPrimitiveType},
     vector_distance::VectorDistanceType,
 };
 
@@ -69,6 +69,8 @@ pub struct SystemContextBuilding {
     pub entity_types: MappedArena<EntityType>,
     pub aggregate_types: MappedArena<AggregateType>,
     pub vector_distance_types: MappedArena<VectorDistanceType>,
+    pub computed_scripts: SerializableSlab<ComputedScript>,
+    pub computed_script_ids: HashMap<String, SerializableSlabIndex<ComputedScript>>,
 
     pub database_access_expressions:
         Mutex<AccessExpressionsBuilding<DatabaseAccessPrimitiveExpression>>,
@@ -85,6 +87,7 @@ impl SystemContextBuilding {
             primitive_types: self.primitive_types.values(),
             entity_types: self.entity_types.values(),
             aggregate_types: self.aggregate_types.values(),
+            computed_scripts: self.computed_scripts,
 
             database: self.database,
 

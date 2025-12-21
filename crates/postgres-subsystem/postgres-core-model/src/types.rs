@@ -21,7 +21,7 @@ use core_model::{
 
 use crate::access::Access;
 
-use exo_sql::{PhysicalTable, SchemaObjectName};
+use exo_sql::{ColumnId, PhysicalTable, SchemaObjectName};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
@@ -166,6 +166,26 @@ pub struct PostgresField<CT> {
     pub access: Access,
     pub type_validation: Option<TypeValidation>,
     pub doc_comments: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ComputedScript {
+    pub path: String,
+    pub definition: Vec<u8>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ComputedField {
+    pub script_id: SerializableSlabIndex<ComputedScript>,
+    pub function_name: String,
+    pub subsystem: String,
+    pub dependencies: Vec<ComputedFieldDependency>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ComputedFieldDependency {
+    pub field_name: String,
+    pub column_id: ColumnId,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

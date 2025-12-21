@@ -50,11 +50,16 @@ stages:
         }
     response: |
       {
-        "errors": [
-          {
-            "message": "Not authorized"
-          }
-        ]
+        "data": {
+          "documents": [
+            {
+              "id": 1,
+              "title": "car",
+              "content": "Car",
+              "contentVector": null
+            }
+          ]
+        }
       }
   # Test for contentVectorDistance
   - operation: |
@@ -68,11 +73,16 @@ stages:
         }
     response: |
       {
-        "errors": [
-          {
-            "message": "Not authorized"
-          }
-        ]
+        "data": {
+          "documents": [
+            {
+              "id": 1,
+              "title": "car",
+              "content": "Car",
+              "contentVectorDistance": null
+            }
+          ]
+        }
       }
   # User is not admin, but asking for only authorized fields
   - operation: |

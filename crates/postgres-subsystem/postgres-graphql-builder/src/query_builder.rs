@@ -357,6 +357,9 @@ fn compute_unique_query_predicate_param(
             PostgresRelation::Embedded => {
                 panic!("Embedded relations cannot be used in unique queries")
             }
+            PostgresRelation::Computed(_) => {
+                panic!("Computed relations cannot be used in unique queries")
+            }
         })
         .collect()
 }

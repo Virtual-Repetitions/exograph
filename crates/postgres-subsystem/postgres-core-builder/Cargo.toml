@@ -19,6 +19,19 @@ postgres-core-model = { path = "../postgres-core-model" }
 common = { path = "../../common" }
 exo-sql = { path = "../../../libs/exo-sql" }
 
+[dependencies.tokio]
+workspace = true
+features = ["rt-multi-thread", "macros", "process"]
+
+[dependencies.deno_core]
+workspace = true
+
+[dependencies.url]
+workspace = true
+
+[dependencies.exo-deno]
+path = "../../../libs/exo-deno"
+
 [dev-dependencies]
 insta.workspace = true
 wasm-bindgen-test.workspace = true

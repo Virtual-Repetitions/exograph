@@ -75,6 +75,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: title_main
             typ:
               Plain:
@@ -101,6 +102,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: title_main1
             typ:
               Plain:
@@ -127,6 +129,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: public1
             typ:
               Plain:
@@ -153,6 +156,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: PUBLIC2
             typ:
               Plain:
@@ -179,6 +183,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
           - name: foo123
             typ:
               Plain:
@@ -205,6 +210,7 @@ values:
             update_sync: false
             readonly: false
             doc_comments: ~
+            computed: ~
         table_name:
           name: entities
           schema: ~

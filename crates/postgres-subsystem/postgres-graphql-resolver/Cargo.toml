@@ -26,6 +26,8 @@ postgres-graphql-model = { path = "../postgres-graphql-model" }
 postgres-core-model = { path = "../postgres-core-model" }
 postgres-core-resolver = { path = "../postgres-core-resolver" }
 common = { path = "../../common" }
+deno-graphql-resolver = { path = "../../deno-subsystem/deno-graphql-resolver" }
+exo-deno = { path = "../../../libs/exo-deno" }
 
 [dev-dependencies]
 tokio.workspace = true

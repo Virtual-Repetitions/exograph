@@ -14,11 +14,34 @@ stages:
       }
     response: |
       {
-        "errors": [
-          {
-            "message": "Not authorized"
-          }
-        ]
+        "data": {
+          "todos": [
+            {
+              "id": $.groceriesId,
+              "title": $.groceriesTitle,
+              "metadata": {
+                "notes": $.groceriesMetadata.notes
+              },
+              "adminMetadata": null
+            },
+            {
+              "id": $.cleanId,
+              "title": $.cleanTitle,
+              "metadata": {
+                "notes": $.cleanMetadata.notes
+              },
+              "adminMetadata": null
+            },
+            {
+              "id": $.medicationId,
+              "title": $.medicationTitle,
+              "metadata": {
+                "notes": $.medicationMetadata.notes
+              },
+              "adminMetadata": null
+            }
+          ]
+        }
       }
 
   - operation: |

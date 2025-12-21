@@ -15,6 +15,7 @@ use async_graphql_parser::types::{FieldDefinition, OperationType, TypeDefinition
 use async_trait::async_trait;
 use common::context::{ContextExtractionError, RequestContext};
 use core_plugin_shared::interception::InterceptorIndex;
+use std::any::Any;
 use thiserror::Error;
 use tokio::runtime::Handle;
 
@@ -34,6 +35,8 @@ use tokio::runtime::Handle;
 pub trait SubsystemGraphQLResolver: Sync {
     /// The id of the subsystem (for debugging purposes)
     fn id(&self) -> &'static str;
+
+    fn as_any(&self) -> &dyn Any;
 
     /// Shim method for `resolve`
     async fn resolve_cdylib<'a>(
