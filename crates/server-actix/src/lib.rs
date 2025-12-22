@@ -9,6 +9,7 @@
 
 mod request;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -22,15 +23,18 @@ use system_router::SystemRouter;
 use url::Url;
 
 use common::{
-    env_const::{DeploymentMode, get_deployment_mode},
+    env_const::{DeploymentMode, get_deployment_mode, get_graphql_http_path},
     router::Router,
 };
 use common::{
-    http::{RequestHead, RequestPayload, ResponseBody, ResponsePayload},
+    http::{
+        MemoryRequestHead, MemoryRequestPayload, RequestHead, RequestPayload, ResponseBody,
+        ResponsePayload,
+    },
     router::PlainRequestPayload,
 };
 use request::ActixRequestHead;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 macro_rules! error_msg {
     ($msg:literal) => {
@@ -38,10 +42,16 @@ macro_rules! error_msg {
     };
 }
 
+#[derive(Clone)]
+struct GraphQLPaths {
+    graphql_http_path: String,
+}
+
 pub fn configure_router(
     system_router: web::Data<SystemRouter>,
     env: Arc<dyn Environment>,
 ) -> impl FnOnce(&mut ServiceConfig) {
+    let graphql_http_path = get_graphql_http_path(env.as_ref());
     let endpoint_url = match get_deployment_mode(env.as_ref()) {
         Ok(Some(DeploymentMode::Playground(url))) => {
             Some(Url::parse(&url).expect("Failed to parse upstream endpoint URL"))
@@ -51,6 +61,9 @@ pub fn configure_router(
 
     move |app| {
         app.app_data(system_router)
+            .app_data(web::Data::new(GraphQLPaths {
+                graphql_http_path: graphql_http_path.clone(),
+            }))
             .app_data(web::Data::new(endpoint_url))
             .default_service(web::to(resolve));
     }
@@ -67,6 +80,15 @@ async fn resolve(
     endpoint_url: web::Data<Option<Url>>,
     system_router: web::Data<SystemRouter>,
 ) -> impl Responder {
+    if http_request.path() == "/healthz" && http_request.method() == actix_web::http::Method::GET {
+        let graphql_http_path = http_request
+            .app_data::<GraphQLPaths>()
+            .map(|paths| paths.graphql_http_path.clone())
+            .unwrap_or_else(|| "/graphql".to_string());
+
+        return handle_healthz(system_router.get_ref(), &graphql_http_path).await;
+    }
+
     match endpoint_url.as_ref() {
         Some(endpoint_url) => {
             // In the playground mode, locally serve the schema query or playground assets
@@ -91,6 +113,55 @@ async fn resolve(
             // We aren't operating in the playground mode, so we can resolve it locally
             resolve_locally(http_request, body, query.into_inner(), system_router).await
         }
+    }
+}
+
+async fn handle_healthz(system_router: &SystemRouter, graphql_http_path: &str) -> HttpResponse {
+    match execute_graphql_health_check(system_router, graphql_http_path).await {
+        Ok(()) => HttpResponse::Ok().json(json!({ "status": "ok" })),
+        Err(err) => {
+            tracing::error!("GraphQL health check failed: {}", err);
+            HttpResponse::ServiceUnavailable().json(json!({
+                "status": "error",
+                "message": err,
+            }))
+        }
+    }
+}
+
+async fn execute_graphql_health_check(
+    system_router: &SystemRouter,
+    graphql_http_path: &str,
+) -> Result<(), String> {
+    let mut headers: HashMap<String, Vec<String>> = HashMap::new();
+    headers.insert(
+        "content-type".to_string(),
+        vec!["application/json".to_string()],
+    );
+
+    let request_head = MemoryRequestHead::new(
+        headers,
+        HashMap::new(),
+        http::Method::POST,
+        graphql_http_path.to_string(),
+        Value::Null,
+        None,
+    );
+
+    let body = json!({
+        "query": "{ __typename }"
+    });
+
+    let payload = MemoryRequestPayload::new(body, request_head);
+    let request_payload = PlainRequestPayload::external(Box::new(payload));
+
+    match system_router.route(&request_payload).await {
+        Some(response) if response.status_code.is_success() => Ok(()),
+        Some(response) => Err(format!(
+            "Unexpected status {} from GraphQL endpoint",
+            response.status_code
+        )),
+        None => Err("GraphQL endpoint returned no response".to_string()),
     }
 }
 
