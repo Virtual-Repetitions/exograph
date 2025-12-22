@@ -72,10 +72,9 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ steps.tags.outputs.environment }}
-            type=sha,prefix=${{ steps.tags.outputs.environment }}-
-            type=raw,value=${{ steps.tags.outputs.environment }}-v${{ steps.version.outputs.value }}
-            ${{ steps.tags.outputs.environment == 'production' && format('type=raw,value=v{0}', steps.version.outputs.value) || '' }}
+            type=raw,value=latest
+            type=sha
+            type=raw,value=v${{ steps.version.outputs.value }}
       
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -96,5 +95,6 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** ${{ steps.tags.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** ${{ steps.version.outputs.value }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Tags:** latest, sha-${GITHUB_SHA::7}, v${{ steps.version.outputs.value }}" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
