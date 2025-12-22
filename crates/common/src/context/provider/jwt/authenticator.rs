@@ -173,7 +173,7 @@ impl JwtAuthenticator {
         let mut oidc_validators = Vec::new();
         if let Some(url) = oidc_url {
             let url_for_log = url.clone();
-            match Oidc::new(url).await {
+            match Oidc::new(url, allowed_audiences.clone()).await {
                 Ok(validator) => {
                     tracing::info!("Initialized OIDC provider: {}", url_for_log);
                     oidc_validators.push(validator);
@@ -207,7 +207,7 @@ impl JwtAuthenticator {
             }
 
             for (idx, url) in urls.iter().enumerate() {
-                match Oidc::new(url.clone()).await {
+                match Oidc::new(url.clone(), allowed_audiences.clone()).await {
                     Ok(validator) => {
                         tracing::info!("Initialized OIDC provider {}: {}", idx + 1, url);
                         oidc_validators.push(validator);
