@@ -234,11 +234,15 @@ impl DataParamBuilder<DataParameter> for UpdateMutationBuilder {
     ) -> Result<Vec<(SerializableSlabIndex<MutationType>, MutationType)>, ModelBuildingError> {
         let existing_type_name =
             Self::data_type_name(&field_type.name, container_type.map(|t| t.name.as_str()));
-        let existing_type_id = building.mutation_types.get_id(&existing_type_name).unwrap();
+        let Some(existing_type_id) = building.mutation_types.get_id(&existing_type_name) else {
+            return Ok(vec![]);
+        };
 
         // If not already expanded
         if building.mutation_types[existing_type_id].entity_id == SerializableSlabIndex::shallow() {
-            let fields_info = vec![
+            let mut fields = vec![];
+
+            let candidates = vec![
                 (
                     "create",
                     create_data_type_name(
@@ -256,16 +260,13 @@ impl DataParamBuilder<DataParameter> for UpdateMutationBuilder {
                 ("delete", field.typ.name().reference_type()),
             ];
 
-            let fields = fields_info
-                .into_iter()
-                .map(|(name, field_type_name)| {
+            for (name, field_type_name) in candidates {
+                if let Some(field_type_id) = building.mutation_types.get_id(&field_type_name) {
                     let plain_field_type = FieldType::Plain(PostgresFieldType {
-                        type_id: TypeIndex::Composite(
-                            building.mutation_types.get_id(&field_type_name).unwrap(),
-                        ),
+                        type_id: TypeIndex::Composite(field_type_id),
                         type_name: field_type_name,
                     });
-                    PostgresField {
+                    fields.push(PostgresField {
                         name: name.to_string(),
                         // The nested "create", "update", and "delete" fields are all optional that take a list.
                         typ: FieldType::Optional(Box::new(FieldType::List(Box::new(
@@ -277,20 +278,27 @@ impl DataParamBuilder<DataParameter> for UpdateMutationBuilder {
                         readonly: field.readonly,
                         type_validation: None,
                         doc_comments: None,
-                    }
-                })
-                .collect();
+                    });
+                }
+            }
+
+            if fields.is_empty() {
+                return Ok(vec![]);
+            }
 
             let mut types = vec![(
                 existing_type_id,
                 MutationType {
                     name: existing_type_name.clone(),
                     fields,
-                    entity_id: building
+                    entity_id: match building
                         .core_subsystem
                         .entity_types
                         .get_id(&field_type.name)
-                        .unwrap(),
+                    {
+                        Some(id) => id,
+                        None => return Ok(vec![]),
+                    },
                     database_access: None,
                     doc_comments: field_type.doc_comments.clone(),
                 },
@@ -298,10 +306,11 @@ impl DataParamBuilder<DataParameter> for UpdateMutationBuilder {
 
             let nested_type = {
                 let nested_existing_type_name = existing_type_name + "Nested";
-                let nested_existing_type_id = building
-                    .mutation_types
-                    .get_id(&nested_existing_type_name)
-                    .unwrap();
+                let Some(nested_existing_type_id) =
+                    building.mutation_types.get_id(&nested_existing_type_name)
+                else {
+                    return Ok(types);
+                };
 
                 let expanded_data_type = self.expanded_data_type(
                     field_type,

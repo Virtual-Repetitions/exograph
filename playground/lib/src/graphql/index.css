@@ -13,6 +13,9 @@
 .graphiql-container {
   all: revert;
   height: 100% !important;
+  display: flex;
+  width: 100%;
+  overflow: hidden;
 }
 
 .graphiql-container .graphiql-main,
@@ -80,5 +83,10 @@
 
 .graphiql-container section.graphiql-doc-explorer .graphiql-doc-explorer-content {
   flex: 1;
+  overflow-y: auto;
+}
+
+.graphiql-container .graphiql-plugin {
+  min-height: 0;
   overflow-y: auto;
 }
