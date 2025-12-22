@@ -159,6 +159,63 @@ pub trait DataParamBuilder<D> {
 
     fn data_param_role() -> DataParamRole;
 
+    fn resolved_type_allows_nested_mutation(resolved_type: &ResolvedCompositeType) -> bool {
+        match Self::data_param_role() {
+            DataParamRole::Create => resolved_type.access.creation_allowed(),
+            DataParamRole::Update => resolved_type.access.update_allowed(),
+        }
+    }
+
+    fn entity_allows_nested_mutation(
+        entity_type: &EntityType,
+        building: &SystemContextBuilding,
+    ) -> bool {
+        match Self::data_param_role() {
+            DataParamRole::Create => {
+                let precheck_access = building
+                    .core_subsystem
+                    .precheck_access_expressions
+                    .lock()
+                    .unwrap();
+                !matches!(
+                    precheck_access[entity_type.access.creation.precheck],
+                    AccessPredicateExpression::BooleanLiteral(false)
+                )
+            }
+            DataParamRole::Update => {
+                let precheck_is_false = {
+                    let guard = building
+                        .core_subsystem
+                        .precheck_access_expressions
+                        .lock()
+                        .unwrap();
+                    matches!(
+                        guard[entity_type.access.update.precheck],
+                        AccessPredicateExpression::BooleanLiteral(false)
+                    )
+                };
+
+                if precheck_is_false {
+                    false
+                } else {
+                    let database_is_false = {
+                        let guard = building
+                            .core_subsystem
+                            .database_access_expressions
+                            .lock()
+                            .unwrap();
+                        matches!(
+                            guard[entity_type.access.update.database],
+                            AccessPredicateExpression::BooleanLiteral(false)
+                        )
+                    };
+
+                    !database_is_false
+                }
+            }
+        }
+    }
+
     fn compute_data_fields(
         &self,
         postgres_fields: &[PostgresField<EntityType>],
@@ -202,16 +259,25 @@ pub trait DataParamBuilder<D> {
                 };
 
                 // If the type is a list or a reference, we need to create a nested input type (one-to-many or one-to-zero-or-one)
-                if let Some(ResolvedType::Composite(ResolvedCompositeType { name, .. })) =
+                if let Some(ResolvedType::Composite(field_typ)) =
                     typ.deref_subsystem_type(resolved_types)
                 {
+                    if !Self::resolved_type_allows_nested_mutation(field_typ) {
+                        return vec![];
+                    }
+
+                    let target_name = field_typ.name.as_str();
+
                     if let FieldType::List(_) = field.typ {
                         // If it is a list, we need to create a nested input type (one-to-many)
-                        Self::data_param_field_one_to_many_type_names(name, resolved_composite_type)
+                        Self::data_param_field_one_to_many_type_names(
+                            target_name,
+                            resolved_composite_type,
+                        )
                     } else if let FieldType::Optional(inner_type) = &field.typ {
                         if matches!(inner_type.as_ref(), FieldType::List(_)) {
                             Self::data_param_field_one_to_many_type_names(
-                                name,
+                                target_name,
                                 resolved_composite_type,
                             )
                         } else {
@@ -224,7 +290,7 @@ pub trait DataParamBuilder<D> {
                                         vec![]
                                     } else {
                                         Self::data_param_field_one_to_many_type_names(
-                                            name,
+                                            target_name,
                                             resolved_composite_type,
                                         )
                                     }
@@ -354,7 +420,11 @@ pub trait DataParamBuilder<D> {
             }
             PostgresRelation::ManyToOne { .. } => {
                 let field_type_name = field.typ.name().reference_type();
-                let field_type_id = building.mutation_types.get_id(&field_type_name).unwrap();
+                let Some(field_type_id) = building.mutation_types.get_id(&field_type_name) else {
+                    // Target entity does not expose a reference input type (for example when its
+                    // mutations are disabled), so skip generating a field that would reference it.
+                    return None;
+                };
                 let field_plain_type = FieldType::Plain(PostgresFieldType {
                     type_name: field_type_name,
                     type_id: TypeIndex::Composite(field_type_id),
@@ -404,6 +474,18 @@ pub trait DataParamBuilder<D> {
         let optional = matches!(field.typ, FieldType::Optional(_)) || Self::mark_fields_optional();
 
         let field_type_name = Self::data_type_name(field.typ.name(), container_type);
+
+        if let Some(entity_type) = building
+            .core_subsystem
+            .entity_types
+            .get_by_key(field.typ.name())
+        {
+            if !Self::entity_allows_nested_mutation(entity_type, building) {
+                return None;
+            }
+        } else {
+            return None;
+        }
 
         building
             .mutation_types
@@ -459,6 +541,10 @@ pub trait DataParamBuilder<D> {
                 (&field_type, &field.relation)
                 && !expanding_one_to_many
             {
+                if !Self::entity_allows_nested_mutation(field_type, building) {
+                    continue;
+                }
+
                 let expanded = self.expand_one_to_many(
                     entity_type,
                     field,
@@ -543,10 +629,9 @@ pub trait DataParamBuilder<D> {
             new_container_type.map(|value| value.name.as_str()),
         );
 
-        let existing = building
-            .mutation_types
-            .get_by_key(&existing_type_name)
-            .unwrap_or_else(|| panic!("Could not find type `{existing_type_name}` to expand"));
+        let Some(existing) = building.mutation_types.get_by_key(&existing_type_name) else {
+            return Ok(vec![]);
+        };
 
         if existing.fields.is_empty() {
             // If not already expanded

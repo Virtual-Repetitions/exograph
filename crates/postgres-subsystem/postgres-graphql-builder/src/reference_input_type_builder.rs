@@ -9,7 +9,10 @@
 
 //! Build the reference input type (used to refer to an entity by its pk)
 
-use core_model::mapped_arena::{MappedArena, SerializableSlabIndex};
+use core_model::{
+    access::AccessPredicateExpression,
+    mapped_arena::{MappedArena, SerializableSlabIndex},
+};
 use core_model_builder::error::ModelBuildingError;
 use postgres_graphql_model::types::MutationType;
 
@@ -31,6 +34,21 @@ impl Builder for ReferenceInputTypeBuilder {
         resolved_composite_type: &ResolvedCompositeType,
         _types: &MappedArena<ResolvedType>,
     ) -> Vec<String> {
+        if !resolved_composite_type.access.creation_allowed()
+            && !resolved_composite_type.access.update_allowed()
+        {
+            return vec![];
+        }
+
+        let has_pk = resolved_composite_type
+            .fields
+            .iter()
+            .any(|field| field.is_pk);
+
+        if !has_pk {
+            return vec![];
+        }
+
         vec![resolved_composite_type.reference_type()]
     }
 
@@ -39,12 +57,15 @@ impl Builder for ReferenceInputTypeBuilder {
         &self,
         building: &mut SystemContextBuilding,
     ) -> Result<(), ModelBuildingError> {
-        for (_, entity_type) in building
-            .core_subsystem
-            .entity_types
-            .iter()
-            .filter(|(_, et)| et.representation != EntityRepresentation::Json)
-        {
+        for (_, entity_type) in building.core_subsystem.entity_types.iter() {
+            if entity_type.representation == EntityRepresentation::Json {
+                continue;
+            }
+
+            if !entity_allows_reference_input(entity_type, building) {
+                continue;
+            }
+
             for (existing_id, expanded_type) in expanded_reference_types(entity_type, building) {
                 building.mutation_types[existing_id] = expanded_type;
             }
@@ -62,7 +83,11 @@ fn expanded_reference_types(
     entity_type: &EntityType,
     building: &SystemContextBuilding,
 ) -> Vec<(SerializableSlabIndex<MutationType>, MutationType)> {
-    let reference_type_fields = entity_type
+    if !entity_allows_reference_input(entity_type, building) {
+        return vec![];
+    }
+
+    let reference_type_fields: Vec<PostgresField<MutationType>> = entity_type
         .fields
         .iter()
         .flat_map(|field| match &field.relation {
@@ -90,6 +115,10 @@ fn expanded_reference_types(
         })
         .collect();
 
+    if reference_type_fields.is_empty() {
+        return vec![];
+    }
+
     let existing_type_name = entity_type.reference_type();
 
     let existing_type_id = building.mutation_types.get_id(&existing_type_name).unwrap();
@@ -108,4 +137,47 @@ fn expanded_reference_types(
             doc_comments: entity_type.doc_comments.clone(),
         },
     )]
+}
+
+fn entity_allows_reference_input(
+    entity_type: &EntityType,
+    building: &SystemContextBuilding,
+) -> bool {
+    let update_precheck_false = {
+        let guard = building
+            .core_subsystem
+            .precheck_access_expressions
+            .lock()
+            .unwrap();
+        matches!(
+            guard[entity_type.access.update.precheck],
+            AccessPredicateExpression::BooleanLiteral(false)
+        )
+    };
+
+    let update_database_false = {
+        let guard = building
+            .core_subsystem
+            .database_access_expressions
+            .lock()
+            .unwrap();
+        matches!(
+            guard[entity_type.access.update.database],
+            AccessPredicateExpression::BooleanLiteral(false)
+        )
+    };
+
+    let creation_access_is_false = {
+        let guard = building
+            .core_subsystem
+            .precheck_access_expressions
+            .lock()
+            .unwrap();
+        matches!(
+            guard[entity_type.access.creation.precheck],
+            AccessPredicateExpression::BooleanLiteral(false)
+        )
+    };
+
+    !(creation_access_is_false && update_precheck_false && update_database_false)
 }
