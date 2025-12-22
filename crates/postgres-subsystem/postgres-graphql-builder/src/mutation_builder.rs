@@ -420,7 +420,11 @@ pub trait DataParamBuilder<D> {
             }
             PostgresRelation::ManyToOne { .. } => {
                 let field_type_name = field.typ.name().reference_type();
-                let field_type_id = building.mutation_types.get_id(&field_type_name).unwrap();
+                let Some(field_type_id) = building.mutation_types.get_id(&field_type_name) else {
+                    // Target entity does not expose a reference input type (for example when its
+                    // mutations are disabled), so skip generating a field that would reference it.
+                    return None;
+                };
                 let field_plain_type = FieldType::Plain(PostgresFieldType {
                     type_name: field_type_name,
                     type_id: TypeIndex::Composite(field_type_id),
