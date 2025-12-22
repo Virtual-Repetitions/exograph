@@ -151,10 +151,7 @@ impl ColumnDefault {
                 .to_string();
             Ok(ColumnDefault::VarChar(var_char_value))
         } else {
-            Err(DatabaseError::Generic(format!(
-                "Invalid default value for string column: {}",
-                default_value
-            )))
+            Ok(ColumnDefault::Function(default_value.to_string()))
         }
     }
 

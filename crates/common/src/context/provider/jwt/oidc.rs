@@ -8,7 +8,10 @@ pub struct Oidc {
 }
 
 impl Oidc {
-    pub(super) async fn new(url: String) -> Result<Self, JwtConfigurationError> {
+    pub(super) async fn new(
+        url: String,
+        allowed_audiences: Option<Vec<String>>,
+    ) -> Result<Self, JwtConfigurationError> {
         let client = reqwest::ClientBuilder::new().build().map_err(|e| {
             JwtConfigurationError::Configuration {
                 message: "Unable to create HTTP client".to_owned(),
@@ -21,6 +24,9 @@ impl Oidc {
         // so we add both to the list of issuers to check.
         let url = url.trim_end_matches('/').to_owned();
         settings.set_issuer(&[&url, &format!("{url}/")]);
+        if let Some(audiences) = &allowed_audiences {
+            settings.set_audience(audiences);
+        }
 
         let validator = Validator::new(url, client, Strategy::Automatic, settings)
             .await
