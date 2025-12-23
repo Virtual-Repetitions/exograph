@@ -41,6 +41,7 @@ import { jwtDebugPlugin } from "./jwt-plugin";
 // Align Quick Search with Cmd+K / Ctrl+K instead of requiring Alt.
 KEY_MAP.searchInDocs.key = "Ctrl-K";
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface GraphiQLPlaygroundProps extends BasePlaygroundComponentProps<GraphiQLProps> {}
 
 export function GraphiQLPlayground({ tab: graphql, auth }: GraphiQLPlaygroundProps) {
@@ -205,7 +206,7 @@ function SchemaFetchingCore(
   return (
     <div className="relative h-full flex flex-col">
       {errorMessage && <Overlay>{errorMessage}</Overlay>}
-      <div className="flex-1">{core}</div>
+      <div className="flex-1 max-h-full">{core}</div>
     </div>
   );
 }
