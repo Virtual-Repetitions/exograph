@@ -205,7 +205,18 @@ fn expand_type_relations(
     }
 
     let table_name = &resolved_type.table_name;
-    let table_id = building.database.get_table_id(table_name).unwrap();
+    let table_id = building
+        .database
+        .get_table_id(table_name)
+        .ok_or_else(|| {
+            ModelBuildingError::Generic(format!(
+                "Type `{}` expects a backing table named `{}` but it was not registered. \
+                 This usually means the type is defined without a matching table or it should be marked with `@json` \
+                 (for computed values or non-Postgres-backed types).",
+                resolved_type.name,
+                table_name.fully_qualified_name()
+            ))
+        })?;
 
     resolved_type
         .fields
@@ -213,7 +224,15 @@ fn expand_type_relations(
         .map(|field| -> Result<(), ModelBuildingError> {
             let field_type = resolved_env
                 .get_by_key(&field.typ.innermost().type_name)
-                .unwrap();
+                .ok_or_else(|| {
+                    ModelBuildingError::Generic(format!(
+                        "The field `{}.{}` references type `{}` which is not registered in the Postgres subsystem. \
+                         Ensure this type is defined, imported, or marked with `@json` if it represents computed data.",
+                        resolved_type.name,
+                        field.name,
+                        field.typ.innermost().type_name
+                    ))
+                })?;
             if let ResolvedType::Composite(ct) = field_type
                 && ct.representation == EntityRepresentation::Json
             {
@@ -221,11 +240,32 @@ fn expand_type_relations(
             }
 
             if field.self_column {
-                let self_column_ids = building
-                    .database
-                    .get_column_ids_from_names(table_id, &field.column_names);
+                let self_column_ids = field
+                    .column_names
+                    .iter()
+                    .map(|name| {
+                        building
+                            .database
+                            .get_column_id(table_id, name)
+                            .ok_or_else(|| {
+                                ModelBuildingError::Generic(format!(
+                                    "Column `{}` referenced by field `{}.{}` was not found on table `{}`. \
+                                     Verify the column exists or adjust the schema definition.",
+                                    name,
+                                    resolved_type.name,
+                                    field.name,
+                                    building
+                                        .database
+                                        .get_table(table_id)
+                                        .name
+                                        .fully_qualified_name()
+                                ))
+                            })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
                 if let Some(relation) = compute_many_to_one_relation(
                     field,
+                    &resolved_type.name,
                     self_column_ids.clone(),
                     resolved_env,
                     building,
@@ -386,7 +426,13 @@ fn create_columns(
     match typ {
         FieldType::Plain(ResolvedFieldType { type_name, .. }) => {
             // Either a scalar (primitive) or a many-to-one relationship with another table
-            let field_type = env.get_by_key(type_name).unwrap();
+            let field_type = env.get_by_key(type_name).ok_or_else(|| {
+                ModelBuildingError::Generic(format!(
+                    "Field `{}.{}` references type `{}` which is not registered in the Postgres subsystem. \
+                     Ensure the type is defined, imported, or marked with `@json` if it does not correspond to a table-backed type.",
+                    resolved_type.name, field.name, type_name
+                ))
+            })?;
 
             match field_type {
                 ResolvedType::Primitive(pt) => {
@@ -570,6 +616,7 @@ fn create_columns(
 
 fn compute_many_to_one_relation(
     field: &ResolvedField,
+    parent_type_name: &str,
     self_column_ids: Vec<ColumnId>,
     env: &ResolvedTypeEnv,
     building: &mut DatabaseBuilding,
@@ -580,13 +627,30 @@ fn compute_many_to_one_relation(
     };
     match typ {
         FieldType::Plain(ResolvedFieldType { type_name, .. }) => {
-            let field_type = env.get_by_key(type_name).unwrap();
+            let field_type = env.get_by_key(type_name).ok_or_else(|| {
+                ModelBuildingError::Generic(format!(
+                    "Field `{}.{}` references type `{}` which is not registered in the Postgres subsystem. \
+                     Ensure the type is defined, imported, or marked with `@json` if it does not correspond to a table-backed type.",
+                    parent_type_name, field.name, type_name
+                ))
+            })?;
             match field_type {
                 ResolvedType::Composite(ct) => {
                     // Column from the current table (but of the type of the pk column of the other table)
                     // and it refers to the pk column in the other table.
 
-                    let foreign_table_id = building.database.get_table_id(&ct.table_name).unwrap();
+                    let foreign_table_id = building
+                        .database
+                        .get_table_id(&ct.table_name)
+                        .ok_or_else(|| {
+                            ModelBuildingError::Generic(format!(
+                                "Unable to find table `{}` required for many-to-one field `{}`. \
+                                 Ensure the referenced type `{}` has a backing table or is marked with `@json`.",
+                                ct.table_name.fully_qualified_name(),
+                                field.name,
+                                ct.name
+                            ))
+                        })?;
                     let foreign_pk_column_ids =
                         building.database.get_pk_column_ids(foreign_table_id);
 
@@ -632,7 +696,12 @@ fn determine_column_type<'a>(
                 &explicit.dbtype,
                 &vec![],
             )
-            .unwrap();
+            .unwrap_or_else(|err| {
+                panic!(
+                    "Failed to determine explicit column type `{}` for field `{}`: {}",
+                    explicit.dbtype, field.name, err
+                )
+            });
         }
     }
 

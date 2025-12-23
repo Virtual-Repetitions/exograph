@@ -76,7 +76,7 @@ pub(super) fn build_expanded(
 ) -> Result<(), ModelBuildingError> {
     for (_, resolved_type) in resolved_env.resolved_types.iter() {
         if let ResolvedType::Composite(c) = &resolved_type {
-            associate_datbase_table(c, building);
+            associate_datbase_table(c, building)?;
         }
     }
 
@@ -165,9 +165,9 @@ fn create_shallow_type(
 fn associate_datbase_table(
     resolved_type: &ResolvedCompositeType,
     building: &mut SystemContextBuilding,
-) {
+) -> Result<(), ModelBuildingError> {
     if resolved_type.representation == EntityRepresentation::Json {
-        return;
+        return Ok(());
     }
 
     let existing_type_id = building.get_entity_type_id(&resolved_type.name).unwrap();
@@ -175,7 +175,16 @@ fn associate_datbase_table(
     existing_type.table_id = building
         .database
         .get_table_id(&resolved_type.table_name)
-        .unwrap();
+        .ok_or_else(|| {
+            ModelBuildingError::Generic(format!(
+                "Type `{}` expects a backing table named `{}` but it was not registered. \
+                 Ensure the table exists in Postgres or annotate the type with `@json` if it \
+                 represents computed data.",
+                resolved_type.name,
+                resolved_type.table_name.fully_qualified_name()
+            ))
+        })?;
+    Ok(())
 }
 
 /// Now that all types have table with them (set in the earlier associate_datbase_table phase), we can
@@ -910,6 +919,23 @@ fn create_relation(
 
     let self_type = &building.entity_types[type_id];
     let self_table_id = &self_type.table_id;
+    let column_lookup = |column: &str| -> Result<ColumnId, ModelBuildingError> {
+        building
+            .database
+            .get_column_id(*self_table_id, column)
+            .ok_or_else(|| {
+                let table_name = building
+                    .database
+                    .get_table(*self_table_id)
+                    .name
+                    .fully_qualified_name();
+                ModelBuildingError::Generic(format!(
+                    "Column `{}` not found on table `{}` while processing field `{}.{}`. \
+                     Check that the column exists in the database or adjust the schema DSL definition.",
+                    column, table_name, self_type.name, field.name
+                ))
+            })
+    };
 
     // we can treat Optional fields as their inner type for the purposes of computing relations
     let field_base_typ = &field.typ.base_type();
@@ -924,10 +950,7 @@ fn create_relation(
                 // 2. Otherwise (if it is a composite), it is a one-to-many relation.
                 match underlying.deref(resolved_env) {
                     ResolvedType::Primitive(_) => Ok(PostgresRelation::Scalar {
-                        column_id: building
-                            .database
-                            .get_column_id(*self_table_id, field.column_name())
-                            .unwrap(),
+                        column_id: column_lookup(field.column_name())?,
                         is_pk: false,
                     }),
                     ResolvedType::Enum(_) => Err(ModelBuildingError::Generic(
@@ -936,10 +959,7 @@ fn create_relation(
                     ResolvedType::Composite(foreign_field_type) => {
                         if foreign_field_type.representation == EntityRepresentation::Json {
                             Ok(PostgresRelation::Scalar {
-                                column_id: building
-                                    .database
-                                    .get_column_id(*self_table_id, field.column_name())
-                                    .unwrap(),
+                                column_id: column_lookup(field.column_name())?,
                                 is_pk: false,
                             })
                         } else if expand_foreign_relations {
@@ -965,10 +985,7 @@ fn create_relation(
                     if self_type.representation == EntityRepresentation::Json {
                         Ok(PostgresRelation::Embedded)
                     } else {
-                        let column_id = building
-                            .database
-                            .get_column_id(*self_table_id, field.column_name())
-                            .unwrap();
+                        let column_id = column_lookup(field.column_name())?;
                         Ok(PostgresRelation::Scalar {
                             column_id,
                             is_pk: field.is_pk,
@@ -976,12 +993,13 @@ fn create_relation(
                     }
                 }
                 ResolvedType::Composite(foreign_field_type) => {
+                    if self_type.representation == EntityRepresentation::Json {
+                        return Ok(PostgresRelation::Embedded);
+                    }
+
                     if foreign_field_type.representation == EntityRepresentation::Json {
                         Ok(PostgresRelation::Scalar {
-                            column_id: building
-                                .database
-                                .get_column_id(*self_table_id, field.column_name())
-                                .unwrap(),
+                            column_id: column_lookup(field.column_name())?,
                             is_pk: field.is_pk,
                         })
                     } else {
