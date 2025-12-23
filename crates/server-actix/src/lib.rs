@@ -138,6 +138,7 @@ async fn execute_graphql_health_check(
         "content-type".to_string(),
         vec!["application/json".to_string()],
     );
+    headers.insert("_exo_playground".to_string(), vec!["true".to_string()]);
 
     let request_head = MemoryRequestHead::new(
         headers,
