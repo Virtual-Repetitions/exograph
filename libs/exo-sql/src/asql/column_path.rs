@@ -265,19 +265,24 @@ impl PhysicalColumnPath {
         // Assert that the the last link in the path points to the same table as the new link's self table
         // This checks for the last two invariants (see above):
         // the last link must be a relation and its table must be the same as the new link's self table
-        assert!(
-            {
-                let last_link = self.0.last().unwrap();
-                matches!(
+        if let Some(last_link) = self.0.last() {
+            let valid = matches!(
+                last_link,
+                ColumnPathLink::Relation(RelationLink {
+                    column_pairs,
+                    ..
+                }) if column_pairs.iter().all(|pair| pair.foreign_column_id.table_id == link.self_table_id())
+            );
+            if !valid {
+                panic!(
+                    "Expected link to point to next table. Last: {:?}, next self table: {:?}",
                     last_link,
-                    ColumnPathLink::Relation(RelationLink {
-                        column_pairs,
-                        ..
-                    }) if column_pairs.iter().all(|pair| pair.foreign_column_id.table_id == link.self_table_id())
-                )
-            },
-            "Expected link to point to next table"
-        );
+                    link.self_table_id()
+                );
+            }
+        } else {
+            panic!("Expected at least one link before pushing new link");
+        }
 
         self.0.push(link);
 
@@ -320,12 +325,12 @@ impl PhysicalColumnPath {
                     let next_table = next_column_id.table_id;
 
                     if next_table == column_id.table_id {
-                        get_otm_relation_for_columns(&[*column_id], database)
+                        get_otm_relation_for_columns(&[*column_id], database, None)
                             .unwrap()
                             .deref(database)
                             .column_path_link()
                     } else {
-                        get_mto_relation_for_columns(&[*column_id], database)
+                        get_mto_relation_for_columns(&[*column_id], database, None)
                             .unwrap()
                             .deref(database)
                             .column_path_link()

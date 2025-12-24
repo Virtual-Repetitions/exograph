@@ -420,6 +420,7 @@ mod tests {
                     nesting_relation: get_otm_relation_for_columns(
                         &[concerts_venue_id_column],
                         &database,
+                        None,
                     )
                     .unwrap()
                     .deref(&database),

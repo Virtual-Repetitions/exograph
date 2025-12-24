@@ -130,6 +130,7 @@ impl ColumnId {
 pub fn get_mto_relation_for_columns(
     column_ids: &[ColumnId],
     database: &Database,
+    target_table: Option<TableId>,
 ) -> Option<ManyToOneId> {
     // Find the relation that has all the given columns as self columns
     database
@@ -143,6 +144,14 @@ pub fn get_mto_relation_for_columns(
                 .collect::<Vec<_>>();
             relation_column_ids.len() == column_ids.len()
                 && relation_column_ids.iter().all(|id| column_ids.contains(id))
+                && target_table
+                    .map(|table_id| {
+                        relation
+                            .column_pairs
+                            .iter()
+                            .all(|pair| pair.foreign_column_id.table_id == table_id)
+                    })
+                    .unwrap_or(true)
         })
         .map(ManyToOneId)
 }
@@ -152,8 +161,9 @@ pub fn get_mto_relation_for_columns(
 pub fn get_otm_relation_for_columns(
     column_ids: &[ColumnId],
     database: &Database,
+    target_table: Option<TableId>,
 ) -> Option<OneToManyId> {
-    get_mto_relation_for_columns(column_ids, database).map(OneToManyId)
+    get_mto_relation_for_columns(column_ids, database, target_table).map(OneToManyId)
 }
 
 impl PartialOrd for ColumnId {

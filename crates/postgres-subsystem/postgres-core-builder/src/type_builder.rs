@@ -965,6 +965,7 @@ fn create_relation(
                         } else if expand_foreign_relations {
                             compute_many_to_one(
                                 field,
+                                self_type,
                                 foreign_field_type,
                                 RelationCardinality::Unbounded,
                                 building,
@@ -1010,6 +1011,7 @@ fn create_relation(
                                 if expand_foreign_relations {
                                     compute_many_to_one(
                                         field,
+                                        self_type,
                                         foreign_field_type,
                                         RelationCardinality::Optional,
                                         building,
@@ -1073,6 +1075,7 @@ fn create_relation(
 
 fn compute_many_to_one(
     field: &ResolvedField,
+    self_type: &EntityType,
     foreign_field_type: &ResolvedCompositeType,
     cardinality: RelationCardinality,
     building: &SystemContextBuilding,
@@ -1104,12 +1107,15 @@ fn compute_many_to_one(
         .collect();
     let foreign_column_ids = foreign_column_ids?;
 
-    let relation_id = get_otm_relation_for_columns(&foreign_column_ids, &building.database).ok_or(
-        ModelBuildingError::Generic(format!(
-            "Relation not found for columns `{:?}`",
-            field.column_names
-        )),
-    )?;
+    let relation_id = get_otm_relation_for_columns(
+        &foreign_column_ids,
+        &building.database,
+        Some(self_type.table_id),
+    )
+    .ok_or(ModelBuildingError::Generic(format!(
+        "Relation not found for columns `{:?}`",
+        field.column_names
+    )))?;
 
     Ok(PostgresRelation::OneToMany(OneToManyRelation {
         foreign_entity_id,
@@ -1148,12 +1154,15 @@ fn compute_one_to_many_relation(
 
     let foreign_pk_field_ids = foreign_type.pk_field_ids(foreign_entity_id);
 
-    let relation_id = get_mto_relation_for_columns(&self_column_ids, &building.database).ok_or(
-        ModelBuildingError::Generic(format!(
-            "Relation not found for columns `{:?}`",
-            field.column_names
-        )),
-    )?;
+    let relation_id = get_mto_relation_for_columns(
+        &self_column_ids,
+        &building.database,
+        Some(foreign_type.table_id),
+    )
+    .ok_or(ModelBuildingError::Generic(format!(
+        "Relation not found for columns `{:?}`",
+        field.column_names
+    )))?;
 
     let relation = relation_id.deref(&building.database);
     if relation.column_pairs.len() != foreign_pk_field_ids.len() {
