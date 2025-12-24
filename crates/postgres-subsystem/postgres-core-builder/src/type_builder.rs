@@ -1112,12 +1112,10 @@ fn compute_many_to_one(
         &building.database,
         Some(self_type.table_id),
     )
-    .ok_or(
-        ModelBuildingError::Generic(format!(
-            "Relation not found for columns `{:?}`",
-            field.column_names
-        )),
-    )?;
+    .ok_or(ModelBuildingError::Generic(format!(
+        "Relation not found for columns `{:?}`",
+        field.column_names
+    )))?;
 
     Ok(PostgresRelation::OneToMany(OneToManyRelation {
         foreign_entity_id,
@@ -1161,12 +1159,10 @@ fn compute_one_to_many_relation(
         &building.database,
         Some(foreign_type.table_id),
     )
-    .ok_or(
-        ModelBuildingError::Generic(format!(
-            "Relation not found for columns `{:?}`",
-            field.column_names
-        )),
-    )?;
+    .ok_or(ModelBuildingError::Generic(format!(
+        "Relation not found for columns `{:?}`",
+        field.column_names
+    )))?;
 
     let relation = relation_id.deref(&building.database);
     if relation.column_pairs.len() != foreign_pk_field_ids.len() {

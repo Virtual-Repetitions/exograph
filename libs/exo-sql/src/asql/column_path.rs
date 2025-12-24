@@ -325,12 +325,12 @@ impl PhysicalColumnPath {
                     let next_table = next_column_id.table_id;
 
                     if next_table == column_id.table_id {
-                        get_otm_relation_for_columns(&[*column_id], database, Some(next_table))
+                        get_otm_relation_for_columns(&[*column_id], database, None)
                             .unwrap()
                             .deref(database)
                             .column_path_link()
                     } else {
-                        get_mto_relation_for_columns(&[*column_id], database, Some(next_table))
+                        get_mto_relation_for_columns(&[*column_id], database, None)
                             .unwrap()
                             .deref(database)
                             .column_path_link()
