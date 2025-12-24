@@ -305,6 +305,7 @@ mod tests {
                                         get_otm_relation_for_columns(
                                             &[concerts_venue_id_column],
                                             &database,
+                                            Some(venues_table),
                                         )
                                         .unwrap(),
                                     ),
@@ -369,6 +370,7 @@ mod tests {
                                         get_otm_relation_for_columns(
                                             &[concerts_venue_id_column],
                                             &database,
+                                            Some(venues_table),
                                         )
                                         .unwrap(),
                                     ),
@@ -434,6 +436,7 @@ mod tests {
                                         get_otm_relation_for_columns(
                                             &[concerts_venue_id_column],
                                             &database,
+                                            Some(venues_table),
                                         )
                                         .unwrap(),
                                     ),
@@ -668,6 +671,7 @@ mod tests {
                                         get_mto_relation_for_columns(
                                             &[venues_parent_venue_id_column],
                                             &database,
+                                            Some(venues_table),
                                         )
                                         .unwrap(),
                                     ),
