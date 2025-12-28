@@ -10,7 +10,6 @@
 import React, {
   useState,
   useRef,
-  useContext,
   useEffect,
   useCallback,
   useMemo,
@@ -26,17 +25,15 @@ import {
 } from "@graphiql/toolkit";
 import { GraphQLSchema } from "graphql";
 import { fetchSchema, SchemaError } from "./schema";
-import { AuthContext } from "../auth/AuthContext";
-import { AuthConfigContext } from "../auth/secret/AuthConfigProvider";
 import { explorerPlugin } from "@graphiql/plugin-explorer";
 import { PlaygroundGraphQLProps as GraphiQLProps } from "./types";
 import { BasePlaygroundComponentProps } from "../util/component-types";
+import { HeaderProfileSelector } from "./HeaderProfileSelector";
 
 import "./index.css";
 import "graphiql/style.css";
 import "@graphiql/plugin-explorer/style.css";
 import { useTheme } from "../util/theme";
-import { jwtDebugPlugin } from "./jwt-plugin";
 
 // Align Quick Search with Cmd+K / Ctrl+K instead of requiring Alt.
 KEY_MAP.searchInDocs.key = "Ctrl-K";
@@ -47,9 +44,6 @@ export interface GraphiQLPlaygroundProps extends BasePlaygroundComponentProps<Gr
 export function GraphiQLPlayground({ tab: graphql, auth }: GraphiQLPlaygroundProps) {
   const { fetcher } = graphql;
   const { jwtSourceHeader, jwtSourceCookie } = auth;
-  const { getTokenFn } = useContext(AuthContext);
-  const authConfigContext = useContext(AuthConfigContext);
-  const customHeaders = authConfigContext?.config?.headers || {};
 
   const dataFetcher: Fetcher = async (
     graphQLParams: FetcherParams,
@@ -58,24 +52,7 @@ export function GraphiQLPlayground({ tab: graphql, auth }: GraphiQLPlaygroundPro
     // Add a special header (`_exo_playground`) to the request to indicate that it's coming from the playground
     let additionalHeaders: Record<string, any> = {
       _exo_playground: "true",
-      ...customHeaders, // Include custom headers from config
     };
-
-    if (getTokenFn) {
-      let authToken = await getTokenFn();
-
-      if (authToken) {
-        if (jwtSourceCookie) {
-          document.cookie = `${jwtSourceCookie}=${authToken}`;
-        } else {
-          const authHeader = jwtSourceHeader || "Authorization";
-          additionalHeaders = {
-            ...additionalHeaders,
-            [authHeader]: `Bearer ${authToken}`,
-          };
-        }
-      }
-    }
 
     return fetcher(graphQLParams, {
       ...opts,
@@ -100,6 +77,8 @@ export function GraphiQLPlayground({ tab: graphql, auth }: GraphiQLPlaygroundPro
   return (
     <SchemaFetchingCore
       schemaFetcher={schemaFetcher}
+      headerName={jwtSourceHeader}
+      cookieName={jwtSourceCookie}
       {...graphql}
       fetcher={dataFetcher}
     />
@@ -109,9 +88,11 @@ export function GraphiQLPlayground({ tab: graphql, auth }: GraphiQLPlaygroundPro
 function SchemaFetchingCore(
   props: {
     schemaFetcher: Fetcher;
+    headerName?: string;
+    cookieName?: string;
   } & GraphiQLProps
 ) {
-  const { schemaFetcher, enableSchemaLiveUpdate, schemaId } = props;
+  const { schemaFetcher, enableSchemaLiveUpdate, schemaId, headerName, cookieName } = props;
   const [schema, setSchema] = useState<GraphQLSchema | SchemaError | null>(
     null
   );
@@ -176,6 +157,8 @@ function SchemaFetchingCore(
     fetcher: props.fetcher,
     upstreamGraphQLEndpoint: props.upstreamGraphQLEndpoint,
     storageKey: props.storageKey,
+    headerName,
+    cookieName,
   };
 
   let core = null;
@@ -200,7 +183,14 @@ function SchemaFetchingCore(
       );
     }
   } else {
-    core = <Core {...coreProps} schema={schema} />;
+    core = (
+      <Core
+        {...coreProps}
+        schema={schema}
+        headerName={headerName}
+        cookieName={cookieName}
+      />
+    );
   }
 
   return (
@@ -211,7 +201,7 @@ function SchemaFetchingCore(
   );
 }
 
-const plugins = [HISTORY_PLUGIN, explorerPlugin(), jwtDebugPlugin()];
+const plugins = [HISTORY_PLUGIN, explorerPlugin()];
 
 function Core({
   schema,
@@ -219,8 +209,12 @@ function Core({
   fetcher,
   upstreamGraphQLEndpoint,
   storageKey,
+  headerName,
+  cookieName,
 }: {
   schema: GraphQLSchema | null;
+  headerName?: string;
+  cookieName?: string;
 } & Pick<
   GraphiQLProps,
   "fetcher" | "initialQuery" | "storageKey" | "upstreamGraphQLEndpoint"
@@ -293,6 +287,7 @@ function Core({
           </>
         )}
       </GraphiQL.Toolbar>
+      <HeaderProfileSelector headerName={headerName} cookieName={cookieName} />
       {upstreamGraphQLEndpoint && (
         <GraphiQL.Footer>
           <div style={{ paddingTop: "5px" }}>
