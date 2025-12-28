@@ -235,14 +235,11 @@ fn parse_provider_descriptors(raw: &str) -> Result<Vec<ProviderDescriptor>, JwtC
                 ))),
                 Err(err) => {
                     jwt_debug_log(|| {
-                        format!(
-                            "Failed to parse decoded {EXO_JWT_PROVIDER_CONFIG}: {err}"
-                        )
+                        format!("Failed to parse decoded {EXO_JWT_PROVIDER_CONFIG}: {err}")
                     });
                     Err(err)
                 }
             }
-
         }
     }
 }
