@@ -12,7 +12,9 @@ where
     let bin = env!("CARGO_BIN_EXE_exo");
 
     let mut cmd = Command::new(bin);
-    cmd.current_dir(cwd).args(args);
+    cmd.current_dir(cwd)
+        .args(args)
+        .env("EXO_SKIP_UPDATE_CHECK", "true");
     cmd
 }
 
