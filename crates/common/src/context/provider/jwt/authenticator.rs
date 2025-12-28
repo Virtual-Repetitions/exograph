@@ -1,3 +1,4 @@
+use serde::Deserialize;
 use serde_json::Value;
 
 use jsonwebtoken::{DecodingKey, Validation, decode};
@@ -9,9 +10,9 @@ use exo_env::Environment;
 use crate::context::error::ContextExtractionError;
 use crate::context::provider::cookie::CookieExtractor;
 use crate::env_const::{
-    EXO_JWKS_URLS, EXO_JWT_AUDIENCES, EXO_JWT_PUBLIC_KEY_KID, EXO_JWT_PUBLIC_KEY_PEM,
-    EXO_JWT_PUBLIC_KEY_PEM_ENVS, EXO_JWT_SECRET, EXO_JWT_SOURCE_COOKIE, EXO_JWT_SOURCE_HEADER,
-    EXO_OIDC_URL, EXO_OIDC_URLS,
+    EXO_JWKS_URLS, EXO_JWT_AUDIENCES, EXO_JWT_PROVIDER_CONFIG, EXO_JWT_PUBLIC_KEY_KID,
+    EXO_JWT_PUBLIC_KEY_PEM, EXO_JWT_PUBLIC_KEY_PEM_ENVS, EXO_JWT_SECRET, EXO_JWT_SOURCE_COOKIE,
+    EXO_JWT_SOURCE_HEADER, EXO_OIDC_URL, EXO_OIDC_URLS,
 };
 use crate::http::RequestHead;
 
@@ -20,6 +21,7 @@ use super::oidc::Oidc;
 use super::static_key::StaticKeyValidator;
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use std::collections::HashSet;
 use std::sync::OnceLock;
 
 const TOKEN_PREFIX: &str = "Bearer ";
@@ -33,6 +35,29 @@ pub struct JwtAuthenticator {
 enum AuthenticatorSource {
     Header(String),
     Cookie(String),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ProviderStrategy {
+    Oidc,
+    Jwks,
+    Static,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProviderDescriptor {
+    #[serde(default)]
+    name: Option<String>,
+    strategy: ProviderStrategy,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    jwks_url: Option<String>,
+    #[serde(default)]
+    issuer_aliases: Vec<String>,
+    #[serde(default)]
+    audiences: Option<Vec<String>>,
 }
 
 /// Authenticator with information about how to validate JWT tokens
@@ -131,11 +156,61 @@ pub enum JwtConfigurationError {
     },
 }
 
+fn parse_provider_descriptors(raw: &str) -> Result<Vec<ProviderDescriptor>, JwtConfigurationError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(JwtConfigurationError::InvalidSetup(format!(
+            "{EXO_JWT_PROVIDER_CONFIG} is set but empty"
+        )));
+    }
+
+    let parsed: Vec<ProviderDescriptor> = serde_json::from_str(trimmed).map_err(|err| {
+        JwtConfigurationError::InvalidSetup(format!(
+            "Failed to parse {EXO_JWT_PROVIDER_CONFIG}: {err}"
+        ))
+    })?;
+
+    if parsed.is_empty() {
+        return Err(JwtConfigurationError::InvalidSetup(format!(
+            "{EXO_JWT_PROVIDER_CONFIG} must define at least one provider"
+        )));
+    }
+
+    Ok(parsed)
+}
+
+fn sanitize_string_list(values: Vec<String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut result = Vec::new();
+
+    for value in values {
+        let trimmed = value.trim().to_string();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if seen.insert(trimmed.clone()) {
+            result.push(trimmed);
+        }
+    }
+
+    result
+}
+
+fn sanitize_aliases(values: Vec<String>) -> Vec<String> {
+    let normalized = values
+        .into_iter()
+        .map(|value| value.trim().trim_end_matches('/').to_string())
+        .collect::<Vec<String>>();
+    sanitize_string_list(normalized)
+}
+
 impl JwtAuthenticator {
     pub async fn new_from_env(
         env: &dyn Environment,
     ) -> Result<Option<Self>, JwtConfigurationError> {
         let secret = env.get(EXO_JWT_SECRET);
+        let provider_config_raw = env.get(EXO_JWT_PROVIDER_CONFIG);
         let oidc_url = env.get(EXO_OIDC_URL);
         let oidc_urls = env.get(EXO_OIDC_URLS);
         let jwks_urls = env.get(EXO_JWKS_URLS);
@@ -152,69 +227,201 @@ impl JwtAuthenticator {
                 .collect::<Vec<String>>()
         });
 
+        let provider_descriptors = if let Some(raw) = provider_config_raw {
+            Some(parse_provider_descriptors(&raw)?)
+        } else {
+            None
+        };
+
         if secret.is_some()
             && (oidc_url.is_some()
                 || oidc_urls.is_some()
                 || jwks_urls.is_some()
                 || direct_public_key.is_some()
-                || public_key_envs.is_some())
+                || public_key_envs.is_some()
+                || provider_descriptors.is_some())
         {
             return Err(JwtConfigurationError::InvalidSetup(format!(
                 "{EXO_JWT_SECRET} cannot be used with any other JWT configuration"
             )));
         }
 
-        if oidc_url.is_some() && oidc_urls.is_some() {
+        if let Some(descriptors) = provider_descriptors.as_ref() {
+            if oidc_url.is_some()
+                || oidc_urls.is_some()
+                || jwks_urls.is_some()
+                || direct_public_key.is_some()
+                || public_key_envs.is_some()
+            {
+                return Err(JwtConfigurationError::InvalidSetup(format!(
+                    "{EXO_JWT_PROVIDER_CONFIG} cannot be combined with legacy JWT environment variables"
+                )));
+            }
+
+            if descriptors.is_empty() {
+                return Err(JwtConfigurationError::InvalidSetup(format!(
+                    "{EXO_JWT_PROVIDER_CONFIG} must define at least one provider"
+                )));
+            }
+        }
+
+        if provider_descriptors.is_none() && oidc_url.is_some() && oidc_urls.is_some() {
             return Err(JwtConfigurationError::InvalidSetup(format!(
                 "Both {EXO_OIDC_URL} and {EXO_OIDC_URLS} are set. Use only {EXO_OIDC_URLS} for multiple providers"
             )));
         }
 
         let mut oidc_validators = Vec::new();
-        if let Some(url) = oidc_url {
-            let url_for_log = url.clone();
-            match Oidc::new(url, allowed_audiences.clone()).await {
-                Ok(validator) => {
-                    tracing::info!("Initialized OIDC provider: {}", url_for_log);
-                    oidc_validators.push(validator);
-                }
-                Err(e) => {
-                    return Err(JwtConfigurationError::Configuration {
-                        message: format!(
-                            "Failed to initialize OIDC provider '{}': {}",
-                            url_for_log, e
-                        ),
-                        source: Box::new(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            format!("{}", e),
-                        )),
-                    });
+        let mut jwks_validators = Vec::new();
+        let mut jwks_debug_snapshot: Vec<(
+            String,
+            String,
+            Vec<String>,
+            Option<Vec<String>>,
+            Option<Vec<String>>,
+        )> = Vec::new();
+        let mut static_key_validators = Vec::new();
+        let mut static_debug_snapshot = Vec::new();
+
+        if let Some(descriptors) = provider_descriptors {
+            for (idx, descriptor) in descriptors.into_iter().enumerate() {
+                let provider_label = descriptor
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| format!("provider {}", idx + 1));
+
+                let provider_audiences = match descriptor.audiences {
+                    Some(list) => {
+                        let cleaned = sanitize_string_list(list);
+                        if cleaned.is_empty() {
+                            None
+                        } else {
+                            Some(cleaned)
+                        }
+                    }
+                    None => allowed_audiences.clone(),
+                };
+
+                let issuer_aliases = sanitize_aliases(descriptor.issuer_aliases);
+
+                match descriptor.strategy {
+                    ProviderStrategy::Oidc => {
+                        let url = descriptor.url.ok_or_else(|| {
+                            JwtConfigurationError::InvalidSetup(format!(
+                                "OIDC provider '{}' is missing 'url'",
+                                provider_label
+                            ))
+                        })?;
+                        match Oidc::new(
+                            url.clone(),
+                            provider_audiences.clone(),
+                            issuer_aliases.clone(),
+                        )
+                        .await
+                        {
+                            Ok(validator) => {
+                                tracing::info!(
+                                    "Initialized OIDC provider '{}': {}",
+                                    provider_label,
+                                    url
+                                );
+                                jwt_debug_log(|| {
+                                    format!(
+                                        "OIDC provider '{}' audiences={:?} issuer_aliases={:?}",
+                                        provider_label, provider_audiences, issuer_aliases
+                                    )
+                                });
+                                oidc_validators.push(validator);
+                            }
+                            Err(e) => {
+                                return Err(JwtConfigurationError::Configuration {
+                                    message: format!(
+                                        "Failed to initialize OIDC provider '{}': {}",
+                                        provider_label, e
+                                    ),
+                                    source: Box::new(std::io::Error::new(
+                                        std::io::ErrorKind::Other,
+                                        format!("{}", e),
+                                    )),
+                                });
+                            }
+                        }
+                    }
+                    ProviderStrategy::Jwks => {
+                        let jwks_url = descriptor.jwks_url.ok_or_else(|| {
+                            JwtConfigurationError::InvalidSetup(format!(
+                                "JWKS provider '{}' is missing 'jwks_url'",
+                                provider_label
+                            ))
+                        })?;
+                        match JwksValidator::new_with_config(
+                            jwks_url.clone(),
+                            provider_audiences.clone(),
+                            if issuer_aliases.is_empty() {
+                                None
+                            } else {
+                                Some(issuer_aliases.clone())
+                            },
+                        )
+                        .await
+                        {
+                            Ok(validator) => {
+                                tracing::info!(
+                                    "Initialized JWKS provider '{}': {}",
+                                    provider_label,
+                                    jwks_url
+                                );
+                                let debug_source = validator.debug_source().to_string();
+                                let debug_kids = validator.debug_known_kids();
+                                let debug_aud =
+                                    validator.debug_allowed_audiences().map(|aud| aud.to_vec());
+                                let debug_iss =
+                                    validator.debug_allowed_issuers().map(|iss| iss.to_vec());
+                                jwks_debug_snapshot.push((
+                                    provider_label.clone(),
+                                    debug_source,
+                                    debug_kids,
+                                    debug_aud,
+                                    debug_iss,
+                                ));
+                                jwks_validators.push(validator);
+                            }
+                            Err(e) => {
+                                return Err(JwtConfigurationError::Configuration {
+                                    message: format!(
+                                        "Failed to initialize JWKS provider '{}': {}",
+                                        provider_label, e
+                                    ),
+                                    source: Box::new(std::io::Error::new(
+                                        std::io::ErrorKind::Other,
+                                        format!("{}", e),
+                                    )),
+                                });
+                            }
+                        }
+                    }
+                    ProviderStrategy::Static => {
+                        return Err(JwtConfigurationError::InvalidSetup(format!(
+                            "Provider '{}' uses unsupported strategy 'static'. Supply the public key via {} instead.",
+                            provider_label, EXO_JWT_PUBLIC_KEY_PEM
+                        )));
+                    }
                 }
             }
-        }
-
-        if let Some(oidc_urls_str) = oidc_urls {
-            let urls: Vec<String> = oidc_urls_str
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
-
-            if urls.is_empty() {
-                return Err(JwtConfigurationError::InvalidSetup(format!(
-                    "{EXO_OIDC_URLS} is set but contains no valid URLs"
-                )));
-            }
-
-            for (idx, url) in urls.iter().enumerate() {
-                match Oidc::new(url.clone(), allowed_audiences.clone()).await {
+        } else {
+            if let Some(url) = oidc_url {
+                let url_for_log = url.clone();
+                match Oidc::new(url, allowed_audiences.clone(), Vec::new()).await {
                     Ok(validator) => {
-                        tracing::info!("Initialized OIDC provider {}: {}", idx + 1, url);
+                        tracing::info!("Initialized OIDC provider: {}", url_for_log);
                         oidc_validators.push(validator);
                     }
                     Err(e) => {
                         return Err(JwtConfigurationError::Configuration {
-                            message: format!("Failed to initialize OIDC provider '{}': {}", url, e),
+                            message: format!(
+                                "Failed to initialize OIDC provider '{}': {}",
+                                url_for_log, e
+                            ),
                             source: Box::new(std::io::Error::new(
                                 std::io::ErrorKind::Other,
                                 format!("{}", e),
@@ -223,66 +430,103 @@ impl JwtAuthenticator {
                     }
                 }
             }
-        }
 
-        let mut jwks_validators = Vec::new();
-        let mut jwks_debug_snapshot = Vec::new();
-        if let Some(jwks_urls_str) = jwks_urls {
-            let urls: Vec<String> = jwks_urls_str
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
+            if let Some(oidc_urls_str) = oidc_urls {
+                let urls: Vec<String> = oidc_urls_str
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
 
-            if urls.is_empty() {
-                return Err(JwtConfigurationError::InvalidSetup(format!(
-                    "{EXO_JWKS_URLS} is set but contains no valid URLs"
-                )));
-            }
+                if urls.is_empty() {
+                    return Err(JwtConfigurationError::InvalidSetup(format!(
+                        "{EXO_OIDC_URLS} is set but contains no valid URLs"
+                    )));
+                }
 
-            for (idx, url) in urls.iter().enumerate() {
-                match JwksValidator::new_with_audiences(url.clone(), allowed_audiences.clone())
-                    .await
-                {
-                    Ok(validator) => {
-                        if allowed_audiences.is_some() {
-                            tracing::info!(
-                                "Initialized JWKS provider {}: {} (with audience validation)",
-                                idx + 1,
-                                url
-                            );
-                        } else {
-                            tracing::info!(
-                                "Initialized JWKS provider {}: {} (no audience validation)",
-                                idx + 1,
-                                url
-                            );
+                for (idx, url) in urls.iter().enumerate() {
+                    match Oidc::new(url.clone(), allowed_audiences.clone(), Vec::new()).await {
+                        Ok(validator) => {
+                            tracing::info!("Initialized OIDC provider {}: {}", idx + 1, url);
+                            oidc_validators.push(validator);
                         }
-                        jwks_validators.push(validator);
+                        Err(e) => {
+                            return Err(JwtConfigurationError::Configuration {
+                                message: format!(
+                                    "Failed to initialize OIDC provider '{}': {}",
+                                    url, e
+                                ),
+                                source: Box::new(std::io::Error::new(
+                                    std::io::ErrorKind::Other,
+                                    format!("{}", e),
+                                )),
+                            });
+                        }
                     }
-                    Err(e) => {
-                        return Err(JwtConfigurationError::Configuration {
-                            message: format!("Failed to initialize JWKS provider '{}': {}", url, e),
-                            source: Box::new(std::io::Error::new(
-                                std::io::ErrorKind::Other,
-                                format!("{}", e),
-                            )),
-                        });
+                }
+            }
+
+            if let Some(jwks_urls_str) = jwks_urls {
+                let urls: Vec<String> = jwks_urls_str
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+
+                if urls.is_empty() {
+                    return Err(JwtConfigurationError::InvalidSetup(format!(
+                        "{EXO_JWKS_URLS} is set but contains no valid URLs"
+                    )));
+                }
+
+                for (idx, url) in urls.iter().enumerate() {
+                    match JwksValidator::new_with_audiences(url.clone(), allowed_audiences.clone())
+                        .await
+                    {
+                        Ok(validator) => {
+                            if allowed_audiences.is_some() {
+                                tracing::info!(
+                                    "Initialized JWKS provider {}: {} (with audience validation)",
+                                    idx + 1,
+                                    url
+                                );
+                            } else {
+                                tracing::info!(
+                                    "Initialized JWKS provider {}: {} (no audience validation)",
+                                    idx + 1,
+                                    url
+                                );
+                            }
+                            let debug_source = validator.debug_source().to_string();
+                            let debug_kids = validator.debug_known_kids();
+                            let debug_aud =
+                                validator.debug_allowed_audiences().map(|aud| aud.to_vec());
+                            jwks_debug_snapshot.push((
+                                format!("jwks {}", idx + 1),
+                                debug_source,
+                                debug_kids,
+                                debug_aud,
+                                None,
+                            ));
+                            jwks_validators.push(validator);
+                        }
+                        Err(e) => {
+                            return Err(JwtConfigurationError::Configuration {
+                                message: format!(
+                                    "Failed to initialize JWKS provider '{}': {}",
+                                    url, e
+                                ),
+                                source: Box::new(std::io::Error::new(
+                                    std::io::ErrorKind::Other,
+                                    format!("{}", e),
+                                )),
+                            });
+                        }
                     }
                 }
             }
         }
 
-        for validator in &jwks_validators {
-            jwks_debug_snapshot.push((
-                validator.debug_source().to_string(),
-                validator.debug_known_kids(),
-                validator.debug_allowed_audiences().map(|aud| aud.to_vec()),
-            ));
-        }
-
-        let mut static_key_validators = Vec::new();
-        let mut static_debug_snapshot = Vec::new();
         if let Some(ref pem) = direct_public_key {
             static_key_validators.push(StaticKeyValidator::from_pem(
                 EXO_JWT_PUBLIC_KEY_PEM,
@@ -405,11 +649,13 @@ impl JwtAuthenticator {
 
         if jwt_debug_enabled() {
             if !jwks_debug_snapshot.is_empty() {
-                for (idx, (source, kids, auds)) in jwks_debug_snapshot.iter().enumerate() {
+                for (idx, (label, source, kids, auds, issuers)) in
+                    jwks_debug_snapshot.iter().enumerate()
+                {
                     jwt_debug_log(|| {
                         format!(
-                            "JWKS[{idx}] source='{}', kids={:?}, audience_filter={:?}",
-                            source, kids, auds
+                            "JWKS[{idx}] provider='{}', source='{}', kids={:?}, audience_filter={:?}, issuer_filter={:?}",
+                            label, source, kids, auds, issuers
                         )
                     });
                 }
@@ -904,17 +1150,23 @@ impl JwtAuthenticator {
 mod tests {
     use std::{
         collections::HashMap,
+        sync::Arc,
         time::{SystemTime, UNIX_EPOCH},
     };
 
     use exo_env::MapEnvironment;
     use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
     use serde_json::json;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+    };
 
     use crate::{
+        context::error::ContextExtractionError,
         env_const::{
-            EXO_JWT_AUDIENCES, EXO_JWT_PUBLIC_KEY_KID, EXO_JWT_PUBLIC_KEY_PEM,
-            EXO_JWT_SOURCE_COOKIE, EXO_JWT_SOURCE_HEADER,
+            EXO_JWT_AUDIENCES, EXO_JWT_PROVIDER_CONFIG, EXO_JWT_PUBLIC_KEY_KID,
+            EXO_JWT_PUBLIC_KEY_PEM, EXO_JWT_SOURCE_COOKIE, EXO_JWT_SOURCE_HEADER,
         },
         http::MemoryRequestHead,
     };
@@ -961,6 +1213,7 @@ GBIdO8TlPVil1Dnd9iNPpQ==
 -----END PRIVATE KEY-----";
 
     const STATIC_KEY_KID: &str = "vreps-app-auth";
+    const STATIC_JWKS: &str = r#"{"keys":[{"kty":"RSA","use":"sig","alg":"RS256","kid":"vreps-app-auth","n":"mOyLeILOVDB_HjSzimCz_wJ9jSIjEFmHIcsYc0MPVKy1iZItaOWd0nnEnvwhK5Gp0DWaCJ6_fe9HHOS_f9u_xPhznI6_fmklTx9mXLyEN54lt1sIdHfI-QSNiG3UYvt3j8Le01X0ziLzdwcJ0cop_hIGGcqmSuMqtU2-a-9hG4HbCVrKb4W3HVgAiXGV08J2FJ5Q3SbRKct5jbPZB03HGiIVWv2yYjAEFMhClD3ALyYkGZppAkfH8EYL1-asIPlR5QEe4J6ILrxEaZe0nWxsq6r3RHk9PZJaxfXAiMp0PPMxHTGMR1p_5x49lgBqNrcc_tK5e7l5xr9TXIdafa6RyQ","e":"AQAB"}]}"#;
 
     #[tokio::test]
     async fn invalid_style() {
@@ -1199,6 +1452,54 @@ GBIdO8TlPVil1Dnd9iNPpQ==
         }
     }
 
+    #[tokio::test]
+    async fn provider_config_jwks_with_custom_issuer() {
+        let jwks_url = spawn_jwks_server(STATIC_JWKS).await;
+
+        let provider_config = format!(
+            r#"[{{"name":"nhost","strategy":"jwks","jwks_url":"{jwks_url}","issuer_aliases":["hasura-auth"]}}]"#
+        );
+
+        let mut env = MapEnvironment::new();
+        env.set(EXO_JWT_PROVIDER_CONFIG, &provider_config);
+        unsafe {
+            std::env::set_var("EXO_JWT_DEBUG", "1");
+        }
+
+        let authenticator = JwtAuthenticator::new_from_env(&env).await.unwrap().unwrap();
+
+        let good_token = create_nhost_bearer_token("hasura-auth");
+        let good_request = request_head_with_headers(HashMap::from([(
+            "Authorization".to_string(),
+            vec![good_token],
+        )]));
+
+        let claims = authenticator
+            .extract_authentication(&good_request)
+            .await
+            .unwrap();
+        assert_eq!(
+            claims
+                .get("https://hasura.io/jwt/claims")
+                .and_then(|value| value.get("x-hasura-user-id"))
+                .and_then(Value::as_str),
+            Some("15de885c-6cb0-480f-97ce-b8b8ece225d5")
+        );
+
+        let bad_token = create_nhost_bearer_token("unexpected-issuer");
+        let bad_request = request_head_with_headers(HashMap::from([(
+            "Authorization".to_string(),
+            vec![bad_token],
+        )]));
+
+        let result = authenticator.extract_authentication(&bad_request).await;
+        assert!(matches!(result, Err(ContextExtractionError::Unauthorized)));
+
+        unsafe {
+            std::env::remove_var("EXO_JWT_DEBUG");
+        }
+    }
+
     fn request_head_with_headers(headers: HashMap<String, Vec<String>>) -> MemoryRequestHead {
         MemoryRequestHead::new(
             headers,
@@ -1292,5 +1593,67 @@ GBIdO8TlPVil1Dnd9iNPpQ==
         .unwrap();
 
         format!("{}{}", TOKEN_PREFIX, token)
+    }
+
+    fn create_nhost_bearer_token(issuer: &str) -> String {
+        let mut header = Header::new(Algorithm::RS256);
+        header.kid = Some(STATIC_KEY_KID.to_string());
+
+        let current_epoch_time = {
+            let start = SystemTime::now();
+            let since_the_epoch = start
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards");
+            since_the_epoch.as_secs() as i64
+        };
+
+        let claims = json!({
+            "iss": issuer,
+            "iat": current_epoch_time,
+            "exp": current_epoch_time + 3600,
+            "https://hasura.io/jwt/claims": {
+                "x-hasura-user-id": "15de885c-6cb0-480f-97ce-b8b8ece225d5",
+                "x-hasura-default-role": "coach",
+            }
+        });
+
+        let token = encode(
+            &header,
+            &claims,
+            &EncodingKey::from_rsa_pem(STATIC_PRIVATE_KEY_PEM.as_bytes()).unwrap(),
+        )
+        .unwrap();
+
+        format!("{}{}", TOKEN_PREFIX, token)
+    }
+
+    async fn spawn_jwks_server(body: &'static str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let body = Arc::new(body.to_string());
+
+        tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = match listener.accept().await {
+                    Ok(conn) => conn,
+                    Err(_) => break,
+                };
+
+                let body = body.clone();
+                tokio::spawn(async move {
+                    let mut buffer = [0u8; 1024];
+                    let _ = socket.read(&mut buffer).await;
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = socket.write_all(response.as_bytes()).await;
+                    let _ = socket.shutdown().await;
+                });
+            }
+        });
+
+        format!("http://{}/jwks.json", addr)
     }
 }

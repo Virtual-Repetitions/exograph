@@ -1,7 +1,7 @@
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tracing::{error, warn};
 
 use super::authenticator::{JwtConfigurationError, jwt_debug_enabled, jwt_debug_log};
@@ -28,16 +28,25 @@ pub struct JwksValidator {
     keys: HashMap<String, DecodingKey>,
     client: reqwest::Client,
     allowed_audiences: Option<Vec<String>>,
+    allowed_issuers: Option<Vec<String>>,
 }
 
 impl JwksValidator {
     pub async fn new(jwks_url: String) -> Result<Self, JwtConfigurationError> {
-        Self::new_with_audiences(jwks_url, None).await
+        Self::new_with_config(jwks_url, None, None).await
     }
 
     pub async fn new_with_audiences(
         jwks_url: String,
         allowed_audiences: Option<Vec<String>>,
+    ) -> Result<Self, JwtConfigurationError> {
+        Self::new_with_config(jwks_url, allowed_audiences, None).await
+    }
+
+    pub async fn new_with_config(
+        jwks_url: String,
+        allowed_audiences: Option<Vec<String>>,
+        allowed_issuers: Option<Vec<String>>,
     ) -> Result<Self, JwtConfigurationError> {
         let client = reqwest::ClientBuilder::new().build().map_err(|e| {
             JwtConfigurationError::Configuration {
@@ -46,11 +55,27 @@ impl JwksValidator {
             }
         })?;
 
+        let normalized_issuers = allowed_issuers.map(|issuers| {
+            let mut seen = HashSet::new();
+            let mut normalized = Vec::new();
+            for issuer in issuers {
+                let trimmed = issuer.trim().trim_end_matches('/').to_string();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                if seen.insert(trimmed.clone()) {
+                    normalized.push(trimmed);
+                }
+            }
+            normalized
+        });
+
         let mut validator = Self {
             jwks_url: jwks_url.clone(),
             keys: HashMap::new(),
             client: client.clone(),
             allowed_audiences,
+            allowed_issuers: normalized_issuers,
         };
 
         // Fetch initial keys
@@ -59,11 +84,12 @@ impl JwksValidator {
         jwt_debug_log(|| {
             let kids: Vec<String> = validator.keys.keys().cloned().collect();
             format!(
-                "Initialized JWKS provider '{}' with {} key(s); kids={:?}; audience_filter={:?}",
+                "Initialized JWKS provider '{}' with {} key(s); kids={:?}; audience_filter={:?}; issuer_filter={:?}",
                 jwks_url,
                 kids.len(),
                 kids,
-                validator.allowed_audiences.as_ref()
+                validator.allowed_audiences.as_ref(),
+                validator.allowed_issuers.as_ref()
             )
         });
 
@@ -159,14 +185,18 @@ impl JwksValidator {
         validation.set_required_spec_claims::<&str>(&[]); // Don't require iss claim
 
         // Decode and validate token
-        eprintln!("[JWKS Validator] Attempting to validate with kid: {}", kid);
-        eprintln!(
-            "[JWKS Validator] Validation settings: exp={}, nbf={}, aud={}",
-            validation.validate_exp, validation.validate_nbf, validation.validate_aud
-        );
+        if jwt_debug_enabled() {
+            eprintln!("[JWKS Validator] Attempting to validate with kid: {}", kid);
+            eprintln!(
+                "[JWKS Validator] Validation settings: exp={}, nbf={}, aud={}",
+                validation.validate_exp, validation.validate_nbf, validation.validate_aud
+            );
+        }
 
         let token_data = decode::<Value>(token, decoding_key, &validation).map_err(|e| {
-            eprintln!("[JWKS Validator] Validation failed: {:?}", e);
+            if jwt_debug_enabled() {
+                eprintln!("[JWKS Validator] Validation failed: {:?}", e);
+            }
             match e.kind() {
                 jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
                     error!("JWT validation failed: expired signature");
@@ -191,9 +221,39 @@ impl JwksValidator {
             }
         })?;
 
-        eprintln!("[JWKS Validator] Validation successful!");
+        if jwt_debug_enabled() {
+            eprintln!("[JWKS Validator] Validation successful!");
+        }
 
-        Ok(token_data.claims)
+        let claims = token_data.claims;
+
+        if let Some(issuers) = &self.allowed_issuers {
+            let issuer_value = claims
+                .get("iss")
+                .and_then(|value| value.as_str())
+                .map(|value| value.trim().trim_end_matches('/').to_string());
+
+            let issuer_matches = issuer_value
+                .as_ref()
+                .map(|candidate| issuers.iter().any(|allowed| allowed == candidate))
+                .unwrap_or(false);
+
+            if !issuer_matches {
+                error!(
+                    "JWT validation failed: issuer {:?} not allowed for provider {}",
+                    issuer_value, self.jwks_url
+                );
+                if jwt_debug_enabled() {
+                    eprintln!(
+                        "[JWT Debug] JWKS '{}' rejected issuer {:?}; allowed issuers: {:?}",
+                        self.jwks_url, issuer_value, issuers
+                    );
+                }
+                return Err(JwtValidationError::Invalid);
+            }
+        }
+
+        Ok(claims)
     }
 }
 
@@ -208,6 +268,10 @@ impl JwksValidator {
 
     pub fn debug_allowed_audiences(&self) -> Option<&[String]> {
         self.allowed_audiences.as_deref()
+    }
+
+    pub fn debug_allowed_issuers(&self) -> Option<&[String]> {
+        self.allowed_issuers.as_deref()
     }
 }
 

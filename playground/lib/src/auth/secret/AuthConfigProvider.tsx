@@ -8,8 +8,8 @@ import React, {
 } from "react";
 import { AuthContext } from "../AuthContext";
 import { SecretConfig } from "./SecretConfig";
-import * as jose from "jose";
 import { SecretAuthContext, SecretAuthProvider } from "./SecretAuthProvider";
+import { createJwtToken } from "./jwt-utils";
 
 type AuthConfig = {
   config: SecretConfig;
@@ -104,22 +104,4 @@ function ContextInitializer(props: { children: React.ReactNode }) {
   ]);
 
   return <>{props.children}</>;
-}
-
-async function createJwtToken(
-  claims: Record<string, unknown>,
-  secret: string
-): Promise<string | null> {
-  if (secret === "") {
-    return null;
-  }
-
-  const encodedSecret = new TextEncoder().encode(secret);
-  const alg = "HS256";
-
-  return await new jose.SignJWT(claims)
-    .setProtectedHeader({ alg })
-    .setIssuedAt()
-    .setExpirationTime("10m")
-    .sign(encodedSecret);
 }
