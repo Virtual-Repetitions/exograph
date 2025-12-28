@@ -177,10 +177,30 @@ fn parse_provider_descriptors(raw: &str) -> Result<Vec<ProviderDescriptor>, JwtC
         Ok(_) => Err(JwtConfigurationError::InvalidSetup(format!(
             "{EXO_JWT_PROVIDER_CONFIG} must define at least one provider"
         ))),
-        Err(_) => {
+        Err(first_err) => {
+            let raw_preview = {
+                let mut preview: String = trimmed.chars().take(200).collect();
+                if trimmed.len() > preview.len() {
+                    preview.push_str("...");
+                }
+                preview
+            };
+            jwt_debug_log(|| {
+                format!(
+                    "Failed to parse {EXO_JWT_PROVIDER_CONFIG} as JSON array: {first_err}; raw preview={:?} (len {})",
+                    raw_preview,
+                    trimmed.len()
+                )
+            });
+
             // Some environments wrap JSON in quotes (and escape inner quotes) when exporting secrets.
             // Try interpreting the value as a JSON string and then re-parsing its contents.
             let decoded = serde_json::from_str::<String>(trimmed).map_err(|err| {
+                jwt_debug_log(|| {
+                    format!(
+                        "Failed to parse {EXO_JWT_PROVIDER_CONFIG} as JSON string after array parsing failed: {err}"
+                    )
+                });
                 JwtConfigurationError::InvalidSetup(format!(
                     "Failed to parse {EXO_JWT_PROVIDER_CONFIG}: {err}"
                 ))
@@ -193,14 +213,33 @@ fn parse_provider_descriptors(raw: &str) -> Result<Vec<ProviderDescriptor>, JwtC
                 )));
             }
 
-            let parsed = attempt_parse(inner)?;
-            if parsed.is_empty() {
-                return Err(JwtConfigurationError::InvalidSetup(format!(
-                    "{EXO_JWT_PROVIDER_CONFIG} must define at least one provider"
-                )));
-            }
+            let decoded_preview = {
+                let mut preview: String = inner.chars().take(200).collect();
+                if inner.len() > preview.len() {
+                    preview.push_str("...");
+                }
+                preview
+            };
+            jwt_debug_log(|| {
+                format!(
+                    "Retrying {EXO_JWT_PROVIDER_CONFIG} parsing using decoded string; decoded preview={:?} (len {})",
+                    decoded_preview,
+                    inner.len()
+                )
+            });
 
-            Ok(parsed)
+            match attempt_parse(inner) {
+                Ok(parsed) if !parsed.is_empty() => Ok(parsed),
+                Ok(_) => Err(JwtConfigurationError::InvalidSetup(format!(
+                    "{EXO_JWT_PROVIDER_CONFIG} must define at least one provider"
+                ))),
+                Err(err) => {
+                    jwt_debug_log(|| {
+                        format!("Failed to parse decoded {EXO_JWT_PROVIDER_CONFIG}: {err}")
+                    });
+                    Err(err)
+                }
+            }
         }
     }
 }
