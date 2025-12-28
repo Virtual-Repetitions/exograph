@@ -172,11 +172,18 @@ fn parse_provider_descriptors(raw: &str) -> Result<Vec<ProviderDescriptor>, JwtC
         })
     }
 
-    match attempt_parse(trimmed) {
-        Ok(parsed) if !parsed.is_empty() => Ok(parsed),
-        Ok(_) => Err(JwtConfigurationError::InvalidSetup(format!(
-            "{EXO_JWT_PROVIDER_CONFIG} must define at least one provider"
-        ))),
+    fn parse_and_validate(input: &str) -> Result<Vec<ProviderDescriptor>, JwtConfigurationError> {
+        match attempt_parse(input) {
+            Ok(parsed) if !parsed.is_empty() => Ok(parsed),
+            Ok(_) => Err(JwtConfigurationError::InvalidSetup(format!(
+                "{EXO_JWT_PROVIDER_CONFIG} must define at least one provider"
+            ))),
+            Err(err) => Err(err),
+        }
+    }
+
+    match parse_and_validate(trimmed) {
+        Ok(parsed) => Ok(parsed),
         Err(first_err) => {
             let raw_preview = {
                 let mut preview: String = trimmed.chars().take(200).collect();
@@ -195,53 +202,138 @@ fn parse_provider_descriptors(raw: &str) -> Result<Vec<ProviderDescriptor>, JwtC
 
             // Some environments wrap JSON in quotes (and escape inner quotes) when exporting secrets.
             // Try interpreting the value as a JSON string and then re-parsing its contents.
-            let decoded = serde_json::from_str::<String>(trimmed).map_err(|err| {
-                jwt_debug_log(|| {
-                    format!(
-                        "Failed to parse {EXO_JWT_PROVIDER_CONFIG} as JSON string after array parsing failed: {err}"
-                    )
-                });
-                JwtConfigurationError::InvalidSetup(format!(
-                    "Failed to parse {EXO_JWT_PROVIDER_CONFIG}: {err}"
-                ))
-            })?;
+            match serde_json::from_str::<String>(trimmed) {
+                Ok(decoded) => {
+                    let inner = decoded.trim();
+                    if inner.is_empty() {
+                        return Err(JwtConfigurationError::InvalidSetup(format!(
+                            "{EXO_JWT_PROVIDER_CONFIG} is set but empty"
+                        )));
+                    }
 
-            let inner = decoded.trim();
-            if inner.is_empty() {
-                return Err(JwtConfigurationError::InvalidSetup(format!(
-                    "{EXO_JWT_PROVIDER_CONFIG} is set but empty"
-                )));
-            }
-
-            let decoded_preview = {
-                let mut preview: String = inner.chars().take(200).collect();
-                if inner.len() > preview.len() {
-                    preview.push_str("...");
-                }
-                preview
-            };
-            jwt_debug_log(|| {
-                format!(
-                    "Retrying {EXO_JWT_PROVIDER_CONFIG} parsing using decoded string; decoded preview={:?} (len {})",
-                    decoded_preview,
-                    inner.len()
-                )
-            });
-
-            match attempt_parse(inner) {
-                Ok(parsed) if !parsed.is_empty() => Ok(parsed),
-                Ok(_) => Err(JwtConfigurationError::InvalidSetup(format!(
-                    "{EXO_JWT_PROVIDER_CONFIG} must define at least one provider"
-                ))),
-                Err(err) => {
+                    let decoded_preview = {
+                        let mut preview: String = inner.chars().take(200).collect();
+                        if inner.len() > preview.len() {
+                            preview.push_str("...");
+                        }
+                        preview
+                    };
                     jwt_debug_log(|| {
-                        format!("Failed to parse decoded {EXO_JWT_PROVIDER_CONFIG}: {err}")
+                        format!(
+                            "Retrying {EXO_JWT_PROVIDER_CONFIG} parsing using decoded string; decoded preview={:?} (len {})",
+                            decoded_preview,
+                            inner.len()
+                        )
                     });
-                    Err(err)
+
+                    match parse_and_validate(inner) {
+                        Ok(parsed) => Ok(parsed),
+                        Err(err) => {
+                            jwt_debug_log(|| {
+                                format!("Failed to parse decoded {EXO_JWT_PROVIDER_CONFIG}: {err}")
+                            });
+                            Err(err)
+                        }
+                    }
+                }
+                Err(json_string_err) => {
+                    jwt_debug_log(|| {
+                        format!(
+                            "Failed to parse {EXO_JWT_PROVIDER_CONFIG} as JSON string after array parsing failed: {json_string_err}"
+                        )
+                    });
+
+                    if let Some(unescaped) = loosely_unescape_provider_config(trimmed) {
+                        let inner = unescaped.trim();
+                        if inner.is_empty() {
+                            return Err(JwtConfigurationError::InvalidSetup(format!(
+                                "{EXO_JWT_PROVIDER_CONFIG} is set but empty"
+                            )));
+                        }
+
+                        let unescaped_preview = {
+                            let mut preview: String = inner.chars().take(200).collect();
+                            if inner.len() > preview.len() {
+                                preview.push_str("...");
+                            }
+                            preview
+                        };
+                        jwt_debug_log(|| {
+                            format!(
+                                "Retrying {EXO_JWT_PROVIDER_CONFIG} parsing after unescaping; unescaped preview={:?} (len {})",
+                                unescaped_preview,
+                                inner.len()
+                            )
+                        });
+
+                        match parse_and_validate(inner) {
+                            Ok(parsed) => return Ok(parsed),
+                            Err(err) => {
+                                jwt_debug_log(|| {
+                                    format!(
+                                        "Failed to parse unescaped {EXO_JWT_PROVIDER_CONFIG}: {err}"
+                                    )
+                                });
+                                return Err(err);
+                            }
+                        }
+                    }
+
+                    Err(JwtConfigurationError::InvalidSetup(format!(
+                        "Failed to parse {EXO_JWT_PROVIDER_CONFIG}: {json_string_err}"
+                    )))
                 }
             }
         }
     }
+}
+
+fn loosely_unescape_provider_config(raw: &str) -> Option<String> {
+    if !raw.contains('\\') {
+        return None;
+    }
+
+    let mut result = String::with_capacity(raw.len());
+    let mut chars = raw.chars();
+    let mut changed = false;
+
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            match chars.next() {
+                Some('"') => {
+                    result.push('"');
+                    changed = true;
+                }
+                Some('\\') => {
+                    result.push('\\');
+                    changed = true;
+                }
+                Some('n') => {
+                    result.push('\n');
+                    changed = true;
+                }
+                Some('t') => {
+                    result.push('\t');
+                    changed = true;
+                }
+                Some('r') => {
+                    result.push('\r');
+                    changed = true;
+                }
+                Some(other) => {
+                    result.push('\\');
+                    result.push(other);
+                }
+                None => {
+                    result.push('\\');
+                }
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+
+    if changed { Some(result) } else { None }
 }
 
 fn sanitize_string_list(values: Vec<String>) -> Vec<String> {
@@ -1571,6 +1663,36 @@ GBIdO8TlPVil1Dnd9iNPpQ==
 
         let raw = format!(
             r#""[{{\"name\":\"nhost\",\"strategy\":\"jwks\",\"jwks_url\":\"{jwks_url}\",\"issuer_aliases\":[\"hasura-auth\"]}}]""#
+        );
+
+        let mut env = MapEnvironment::new();
+        env.set(EXO_JWT_PROVIDER_CONFIG, &raw);
+
+        let authenticator = JwtAuthenticator::new_from_env(&env).await.unwrap().unwrap();
+
+        let token = create_nhost_bearer_token("hasura-auth");
+        let request =
+            request_head_with_headers(HashMap::from([("Authorization".to_string(), vec![token])]));
+
+        let claims = authenticator
+            .extract_authentication(&request)
+            .await
+            .unwrap();
+        assert_eq!(
+            claims
+                .get("https://hasura.io/jwt/claims")
+                .and_then(|value| value.get("x-hasura-user-id"))
+                .and_then(Value::as_str),
+            Some("15de885c-6cb0-480f-97ce-b8b8ece225d5")
+        );
+    }
+
+    #[tokio::test]
+    async fn provider_config_accepts_backslash_escaped_json_array() {
+        let jwks_url = spawn_jwks_server(STATIC_JWKS).await;
+
+        let raw = format!(
+            r#"[   {{\"name\":\"vreps\",\"strategy\":\"oidc\",\"url\":\"https://auth.vreps.tech\",\"audiences\":[\"vreps-app\"]}},   {{\"name\":\"nhost\",\"strategy\":\"jwks\",\"jwks_url\":\"{jwks_url}\",\"issuer_aliases\":[\"hasura-auth\"]}} ]"#
         );
 
         let mut env = MapEnvironment::new();
