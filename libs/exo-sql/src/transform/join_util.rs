@@ -15,6 +15,7 @@ use crate::{
 };
 
 use super::pg::selection_level::SelectionLevel;
+use std::collections::HashMap;
 
 /// Compute the join needed to access the leaf columns of a list of column paths. Will return a
 /// `Table::Physical` if there are no dependencies to join otherwise a `Table::Join`.
@@ -31,16 +32,21 @@ pub fn compute_join(
         database: &Database,
         top_level: bool,
         forced_alias: Option<String>,
+        alias_usage: &mut HashMap<String, usize>,
     ) -> Table {
         // We don't use the alias for the top level table in predicate, so match the behavior here
         let init_table = {
-            let alias = forced_alias.or_else(|| {
-                if top_level {
-                    selection_level.self_referencing_table_alias(dependency.table_id, database)
-                } else {
-                    Some(selection_level.alias((dependency.table_id, None), database))
+            let alias = match forced_alias {
+                Some(alias) => Some(alias),
+                None => {
+                    let generated = if top_level {
+                        selection_level.self_referencing_table_alias(dependency.table_id, database)
+                    } else {
+                        Some(selection_level.alias((dependency.table_id, None), database))
+                    };
+                    generated.map(|alias| make_unique_alias(alias, alias_usage))
                 }
-            });
+            };
 
             Table::physical(dependency.table_id, alias)
         };
@@ -53,7 +59,7 @@ pub fn compute_join(
         dependency.dependencies.into_iter().fold(
             init_table,
             |acc, DependencyLink { link, dependency }| {
-                let (join_predicate, linked_table_alias) = match link {
+                let (join_predicate, new_alias) = match link {
                     ColumnPathLink::Relation(relation_link) => {
                         let linked_table_id = relation_link.linked_table_id;
                         let RelationLink {
@@ -62,8 +68,10 @@ pub fn compute_join(
                             ..
                         } = relation_link;
 
-                        let new_alias =
-                            selection_level.alias((linked_table_id, linked_table_alias), database);
+                        let new_alias = make_unique_alias(
+                            selection_level.alias((linked_table_id, linked_table_alias), database),
+                            alias_usage,
+                        );
 
                         let predicate = column_pairs.iter().fold(
                             ConcretePredicate::True,
@@ -95,7 +103,8 @@ pub fn compute_join(
                     selection_level,
                     database,
                     false,
-                    Some(linked_table_alias.clone()),
+                    Some(new_alias.clone()),
+                    alias_usage,
                 );
 
                 Table::Join(Box::new(LeftJoin::new(
@@ -112,7 +121,32 @@ pub fn compute_join(
         dependencies: vec![],
     });
 
-    from_dependency(table_tree, selection_level, database, true, None)
+    from_dependency(
+        table_tree,
+        selection_level,
+        database,
+        true,
+        None,
+        &mut HashMap::new(),
+    )
+}
+
+fn make_unique_alias(alias: String, alias_usage: &mut HashMap<String, usize>) -> String {
+    use std::collections::hash_map::Entry;
+
+    match alias_usage.entry(alias.clone()) {
+        Entry::Vacant(entry) => {
+            entry.insert(1);
+            alias
+        }
+        Entry::Occupied(mut entry) => {
+            let counter = *entry.get();
+            let candidate = format!("{alias}${counter}");
+            entry.insert(counter + 1);
+            alias_usage.insert(candidate.clone(), 1);
+            candidate
+        }
+    }
 }
 
 #[cfg(test)]
