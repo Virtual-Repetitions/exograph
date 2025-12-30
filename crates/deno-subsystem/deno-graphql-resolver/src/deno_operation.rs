@@ -28,6 +28,7 @@ use deno_graphql_model::{
 
 use exo_deno::{Arg, deno_executor_pool::DenoScriptDefn};
 use futures::StreamExt;
+use tracing::{debug, trace, warn};
 
 use crate::{
     DenoSubsystemResolver, deno_execution_error::DenoExecutionError,
@@ -46,11 +47,11 @@ pub struct DenoOperation<'a> {
 
 impl DenoOperation<'_> {
     pub async fn execute(&self) -> Result<QueryResponse, DenoExecutionError> {
-        eprintln!("[DenoOperation] executing method '{}'", self.method.name);
+        debug!("[DenoOperation] executing method '{}'", self.method.name);
         let access_predicate = self.compute_module_access_predicate().await?;
 
         if !access_predicate {
-            eprintln!("[DenoOperation] access denied for '{}'", self.method.name);
+            warn!("[DenoOperation] access denied for '{}'", self.method.name);
             return Err(DenoExecutionError::Authorization);
         }
 
@@ -59,7 +60,7 @@ impl DenoOperation<'_> {
 
     async fn compute_module_access_predicate(&self) -> Result<bool, AccessSolverError> {
         if self.request_context.is_internal() {
-            eprintln!(
+            trace!(
                 "[DenoOperation] skipping access check for '{}' (internal request)",
                 self.method.name
             );
@@ -86,7 +87,7 @@ impl DenoOperation<'_> {
                     .map(|r| r.0)
                     .resolve();
 
-                eprintln!(
+                trace!(
                     "[DenoOperation] access check for '{}': type_level={}, method_level={:?}",
                     self.method.name, type_level_access, method_level_access
                 );
@@ -94,7 +95,7 @@ impl DenoOperation<'_> {
                 // deny if either access check fails
                 let allow = type_level_access
                     && !matches!(method_level_access, ModuleAccessPredicate::False);
-                eprintln!(
+                trace!(
                     "[DenoOperation] access result for '{}': {}",
                     self.method.name, allow
                 );
@@ -116,12 +117,12 @@ impl DenoOperation<'_> {
         let exograph_execute_query: &ExographExecuteQueryFn =
             exograph_execute_query!(self.system_resolver, self.request_context);
 
-        eprintln!(
+        trace!(
             "[DenoOperation] constructing args for '{}'",
             self.method.name
         );
         let arg_sequence: Vec<Arg> = self.construct_arg_sequence().await?;
-        eprintln!(
+        debug!(
             "[DenoOperation] invoking '{}' (from '{}') with {} arg(s)",
             self.method.name,
             script.path,
@@ -201,47 +202,53 @@ pub async fn construct_arg_sequence<'a>(
                     .map(|(_, context)| context)
                     .find(|context| context.name == arg_type.name)
                 {
-                    eprintln!(
+                    trace!(
                         "[DenoOperation] attempting to extract context '{}' for argument '{}'",
-                        context.name, arg.name
+                        context.name,
+                        arg.name
                     );
                     // this argument is a context, get the value of the context and give it as an argument
                     let context_value_result =
                         system.extract_context(request_context, &arg_type.name).await;
                     match context_value_result {
                         Ok(Some(context_value)) => {
-                            eprintln!(
+                            trace!(
                                 "[DenoOperation] injecting context '{}' for argument '{}'",
-                                context.name, arg.name
+                                context.name,
+                                arg.name
                             );
                             Ok(Arg::Serde(context_value.try_into().unwrap()))
                         }
                         Ok(None) => {
-                            eprintln!(
+                            warn!(
                                 "[DenoOperation] context '{}' resolved to None for argument '{}'",
-                                context.name, arg.name
+                                context.name,
+                                arg.name
                             );
                             Err(DenoExecutionError::Authorization)
                         }
                         Err(err) => {
-                            eprintln!(
+                            warn!(
                                 "[DenoOperation] failed to extract context '{}' for argument '{}': {:?}",
-                                context.name, arg.name, err
+                                context.name,
+                                arg.name,
+                                err
                             );
                             Err(DenoExecutionError::Authorization)
                         }
                     }
                 } else {
                     // not a context, assume it is a provided shim by the Deno executor
-                    eprintln!(
+                    trace!(
                         "[DenoOperation] injecting shim '{}' for argument '{}'",
-                        arg_type.name, arg.name
+                        arg_type.name,
+                        arg.name
                     );
                     Ok(Arg::Shim(arg_type.name.clone()))
                 }
             } else if let Some(val) = mapped_args.get(&arg.name) {
                 // regular argument
-                eprintln!(
+                trace!(
                     "[DenoOperation] passing provided arg '{}' (type {:?})",
                     arg.name,
                     arg.type_id

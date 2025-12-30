@@ -20,6 +20,7 @@ use deno_core::url::Url;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use tracing::debug;
 
 use include_dir::Dir;
 
@@ -73,7 +74,7 @@ impl ModuleLoader for EmbeddedModuleLoader {
                     &final_specifier,
                     None,
                 );
-                println!(
+                debug!(
                     "[DenoLoader] loaded module (cached) {}",
                     module_specifier.as_str()
                 );
@@ -143,7 +144,7 @@ impl ModuleLoader for EmbeddedModuleLoader {
                     ),
                 );
 
-                println!(
+                debug!(
                     "[DenoLoader] loaded module {} (through FsModuleLoader)",
                     log_spec
                 );

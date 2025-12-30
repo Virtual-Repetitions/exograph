@@ -12,6 +12,7 @@ use std::sync::Mutex;
 use serde_json::Value;
 
 use async_trait::async_trait;
+use tracing::{trace, warn};
 
 use crate::context::{ContextExtractionError, RequestContext, context_extractor::ContextExtractor};
 use crate::env_const::get_graphql_http_path;
@@ -31,7 +32,7 @@ impl<'request> ContextExtractor for QueryExtractor {
         key: &str,
         request_context: &RequestContext,
     ) -> Result<Option<serde_json::Value>, ContextExtractionError> {
-        eprintln!("[QueryExtractor] executing @query field '{key}'");
+        trace!("[QueryExtractor] executing @query field '{key}'");
         let query = format!("query {{ {} }}", key.to_owned());
 
         let operation_payload = OperationsPayload {
@@ -55,7 +56,7 @@ impl<'request> ContextExtractor for QueryExtractor {
         let new_request_context = request_context.with_request(&request);
 
         let response_payload = request_context.route(&new_request_context).await;
-        eprintln!(
+        trace!(
             "[QueryExtractor] routed internal query '{}', got response: {}",
             key,
             response_payload.as_ref().map(|_| "Some").unwrap_or("None")
@@ -69,7 +70,7 @@ impl<'request> ContextExtractor for QueryExtractor {
                             .to_string(),
                     )
                 })?;
-                eprintln!(
+                trace!(
                     "[QueryExtractor] raw response for '{}': {}",
                     key, response_body
                 );
@@ -92,7 +93,7 @@ impl<'request> ContextExtractor for QueryExtractor {
         let mut response_body_data = response_body_value["data"].take();
 
         if response_body_data.is_null() {
-            eprintln!("[QueryExtractor] response missing data for field '{}'", key);
+            warn!("[QueryExtractor] response missing data for field '{}'", key);
             return Err(ContextExtractionError::Generic(
                 "No data in response from system router".to_string(),
             ));
@@ -101,7 +102,7 @@ impl<'request> ContextExtractor for QueryExtractor {
         let matching_result = response_body_data[key].take();
 
         if matching_result.is_null() {
-            eprintln!(
+            warn!(
                 "[QueryExtractor] field '{}' missing in GraphQL response",
                 key
             );

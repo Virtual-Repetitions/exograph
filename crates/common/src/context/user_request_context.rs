@@ -10,6 +10,7 @@
 use std::collections::HashMap;
 
 use elsa::sync::FrozenMap;
+use tracing::debug;
 
 use crate::http::{RequestHead, RequestPayload};
 
@@ -84,7 +85,7 @@ impl<'a> UserRequestContext<'a> {
         let value: &'a Option<Val> = match cached_value {
             Some(value) => value,
             None => {
-                eprintln!(
+                debug!(
                     "[ContextDebug] extracting field '{}' via annotation '{}'",
                     key, annotation
                 );
