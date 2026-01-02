@@ -369,36 +369,34 @@ fn build_ownership_guard_expr(config: &OwnershipConfig) -> AstExpr<Typed> {
         Some(combined)
     };
 
-    if let Some(restrict_roles) = &config.restrict_roles {
-        if !restrict_roles.is_empty() {
-            if let Some(role_in_restrict) = build_role_membership(restrict_roles) {
-                let not_role_in_restrict = AstExpr::LogicalOp(LogicalOp::Not(
-                    Box::new(role_in_restrict),
-                    default_span(),
-                    Type::Defer,
-                ));
+    if let Some(restrict_roles) = &config.restrict_roles
+        && !restrict_roles.is_empty()
+        && let Some(role_in_restrict) = build_role_membership(restrict_roles)
+    {
+        let not_role_in_restrict = AstExpr::LogicalOp(LogicalOp::Not(
+            Box::new(role_in_restrict),
+            default_span(),
+            Type::Defer,
+        ));
 
-                guard = AstExpr::LogicalOp(LogicalOp::Or(
-                    Box::new(not_role_in_restrict),
-                    Box::new(guard),
-                    default_span(),
-                    Type::Defer,
-                ));
-            }
-        }
+        guard = AstExpr::LogicalOp(LogicalOp::Or(
+            Box::new(not_role_in_restrict),
+            Box::new(guard),
+            default_span(),
+            Type::Defer,
+        ));
     }
 
-    if let Some(exempt_roles) = &config.exempt_roles {
-        if !exempt_roles.is_empty() {
-            if let Some(role_in_exempt) = build_role_membership(exempt_roles) {
-                guard = AstExpr::LogicalOp(LogicalOp::Or(
-                    Box::new(role_in_exempt),
-                    Box::new(guard),
-                    default_span(),
-                    Type::Defer,
-                ));
-            }
-        }
+    if let Some(exempt_roles) = &config.exempt_roles
+        && !exempt_roles.is_empty()
+        && let Some(role_in_exempt) = build_role_membership(exempt_roles)
+    {
+        guard = AstExpr::LogicalOp(LogicalOp::Or(
+            Box::new(role_in_exempt),
+            Box::new(guard),
+            default_span(),
+            Type::Defer,
+        ));
     }
 
     guard
@@ -607,37 +605,36 @@ fn resolve_composite_type(
             errors,
         );
 
-        if let Some(annotation) = ownership_annotation {
-            if ownership_config.is_some() && !ownership_field_found {
-                push_type_error(
-                    ct,
-                    annotation.span,
-                    format!(
-                        "Field '{}' specified in @ownership was not found on type '{}'",
-                        ownership_config.as_ref().unwrap().field,
-                        ct.name
-                    ),
-                    errors,
-                );
-            }
+        if let Some(annotation) = ownership_annotation
+            && let Some(config) = ownership_config.as_ref()
+            && !ownership_field_found
+        {
+            push_type_error(
+                ct,
+                annotation.span,
+                format!(
+                    "Field '{}' specified in @ownership was not found on type '{}'",
+                    config.field, ct.name
+                ),
+                errors,
+            );
         }
 
-        if ownership_config.is_some() && ownership_field_found {
-            if let Some(config) = ownership_config.as_ref() {
-                let guard_expr = build_ownership_guard_expr(config);
+        if let Some(config) = ownership_config.as_ref()
+            && ownership_field_found
+        {
+            let guard_expr = build_ownership_guard_expr(config);
 
-                if config.enforce_create {
-                    access.creation =
-                        combine_with_guard(access.creation.take(), guard_expr.clone());
-                }
+            if config.enforce_create {
+                access.creation = combine_with_guard(access.creation.take(), guard_expr.clone());
+            }
 
-                if config.enforce_update {
-                    access.update = combine_with_guard(access.update.take(), guard_expr.clone());
-                }
+            if config.enforce_update {
+                access.update = combine_with_guard(access.update.take(), guard_expr.clone());
+            }
 
-                if config.enforce_delete {
-                    access.delete = combine_with_guard(access.delete.take(), guard_expr);
-                }
+            if config.enforce_delete {
+                access.delete = combine_with_guard(access.delete.take(), guard_expr);
             }
         }
 
@@ -763,22 +760,35 @@ fn resolve_composite_type_fields(
             }
         };
 
-        if let Some(config) = ownership_config {
-            if let Some(base_field) = config.field_path.first() {
-                if base_field == &field.name {
-                    ownership_field_found = true;
+        if let Some(config) = ownership_config
+            && let Some(base_field) = config.field_path.first()
+            && base_field == &field.name
+        {
+            ownership_field_found = true;
 
-                    if config.auto_assign && config.field_path.len() == 1 {
-                        readonly = true;
-                        if field_default.is_none() {
-                            let context_expr = AstExpr::FieldSelection(field_selection_from_str(
-                                &config.context_path,
-                            ));
-                            field_default =
-                                Some(ResolvedFieldDefault::Value(Box::new(context_expr)));
-                        }
-                    }
+            if config.auto_assign && config.field_path.len() == 1 {
+                readonly = true;
+                if field_default.is_none() {
+                    let context_expr =
+                        AstExpr::FieldSelection(field_selection_from_str(&config.context_path));
+                    field_default = Some(ResolvedFieldDefault::Value(Box::new(context_expr)));
                 }
+            }
+
+            if config.field_path.len() > 1 {
+                errors.push(Diagnostic {
+                    level: Level::Error,
+                    message: format!(
+                        "Ownership context path '{}' must be a single field name",
+                        config.context_path
+                    ),
+                    code: Some("C000".to_string()),
+                    spans: vec![SpanLabel {
+                        span: field.span,
+                        style: SpanStyle::Primary,
+                        label: Some("Ownership field must refer to a single field".to_string()),
+                    }],
+                });
             }
         }
 

@@ -32,10 +32,6 @@ pub struct JwksValidator {
 }
 
 impl JwksValidator {
-    pub async fn new(jwks_url: String) -> Result<Self, JwtConfigurationError> {
-        Self::new_with_config(jwks_url, None, None).await
-    }
-
     pub async fn new_with_audiences(
         jwks_url: String,
         allowed_audiences: Option<Vec<String>>,

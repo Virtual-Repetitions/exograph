@@ -77,7 +77,7 @@ impl McpRouter {
                 params
                     .get("protocolVersion")
                     .and_then(|v| v.as_str())
-                    .map(|s| ProtocolVersion::try_from(s))
+                    .map(ProtocolVersion::try_from)
             })
             .unwrap_or(Ok(ProtocolVersion::V2025_06_18));
 
@@ -194,9 +194,7 @@ impl McpRouter {
                     None => Err(SubsystemRpcError::MethodNotFound(name.to_string())),
                 }
             }
-            None => {
-                return Err(SubsystemRpcError::InvalidRequest);
-            }
+            None => Err(SubsystemRpcError::InvalidRequest),
         }
     }
 
@@ -344,7 +342,7 @@ impl<'a> Router<RequestContext<'a>> for McpRouter {
             match response {
                 Ok(Some(response)) => {
                     // Emit the response only if it is not a notification (which has no id)
-                    if let Some(_) = id {
+                    if id.is_some() {
                         yield Bytes::from_static(br#"{"jsonrpc": "2.0", "result": "#);
 
                         match response.response.body {

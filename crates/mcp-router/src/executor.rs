@@ -41,7 +41,7 @@ impl Executor for GraphQLSystemResolver {
 
         resolve_in_memory_for_payload(
             operations_payload,
-            &self,
+            self,
             TrustedDocumentEnforcement::DoNotEnforce,
             request_context,
         )

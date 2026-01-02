@@ -61,6 +61,12 @@ impl Headers {
     }
 }
 
+impl Default for Headers {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl IntoIterator for Headers {
     type Item = (String, String);
     type IntoIter = std::vec::IntoIter<(String, String)>;

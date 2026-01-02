@@ -22,7 +22,7 @@ use crate::operation_payload::OperationsPayload;
 pub struct QueryExtractor;
 
 #[async_trait]
-impl<'request> ContextExtractor for QueryExtractor {
+impl ContextExtractor for QueryExtractor {
     fn annotation_name(&self) -> &str {
         "query"
     }
