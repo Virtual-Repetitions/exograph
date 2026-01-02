@@ -8,6 +8,8 @@
     "@commitlint/config-conventional": "^19.8.1"
   },
   "scripts": {
-    "commitlint": "commitlint"
+    "commitlint": "commitlint",
+    "lint": "cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings --no-deps",
+    "lint:fix": "cargo fmt --all"
   }
 }

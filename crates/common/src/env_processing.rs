@@ -14,7 +14,7 @@ pub enum EnvProcessing {
 }
 
 impl EnvProcessing {
-    pub fn load_env(&self) -> impl Environment + Send + Sync + 'static {
+    pub fn load_env(&self) -> impl Environment + 'static {
         // Files in order of precedence
         let mut env_files: Vec<PathBuf> = vec![];
 

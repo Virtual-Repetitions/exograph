@@ -647,6 +647,21 @@ fn convert_literal(node: Node, source: &[u8], source_span: Span) -> AstExpr<Unty
     }
 }
 
+fn convert_string_list(node: Node, source: &[u8], source_span: Span) -> AstExpr<Untyped> {
+    assert_eq!(node.kind(), "string_list");
+    let mut cursor = node.walk();
+
+    let mut values = Vec::new();
+    let mut spans = Vec::new();
+
+    for literal_node in node.children_by_field_name("value", &mut cursor) {
+        values.push(text_child(literal_node, source, "value"));
+        spans.push(span_from_node(source_span, literal_node));
+    }
+
+    AstExpr::StringList(values, spans)
+}
+
 fn convert_object_literal(node: Node, source: &[u8], source_span: Span) -> AstExpr<Untyped> {
     assert_eq!(node.kind(), "object_literal");
     let mut cursor = node.walk();
@@ -682,6 +697,7 @@ fn convert_expression(node: Node, source: &[u8], source_span: Span) -> AstExpr<U
             AstExpr::RelationalOp(convert_relational_op(first_child, source, source_span))
         }
         "selection" => AstExpr::FieldSelection(convert_selection(first_child, source, source_span)),
+        "string_list" => convert_string_list(first_child, source, source_span),
         "parenthetical" => {
             let expression = first_child.child_by_field_name("expression").unwrap();
             convert_expression(expression, source, source_span)

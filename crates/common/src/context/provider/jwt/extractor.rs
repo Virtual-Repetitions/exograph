@@ -102,15 +102,11 @@ impl ContextExtractor for JwtExtractor {
         } else {
             // Use '.' separator and navigate through all parts
             trace!("[JWT Extractor] Using '.' separator");
-            key.split('.').fold(Some(claims), |value, part| {
+            key.split('.').try_fold(claims, |value, part| {
                 trace!("[JWT Extractor] Navigating to part: {}", part);
-                if let Some(value) = value {
-                    let result = value.get(part);
-                    trace!("[JWT Extractor] Result: {:?}", result);
-                    result
-                } else {
-                    None
-                }
+                let result = value.get(part);
+                trace!("[JWT Extractor] Result: {:?}", result);
+                result
             })
         };
 

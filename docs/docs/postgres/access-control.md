@@ -170,6 +170,44 @@ You may use parentheses to group expressions. For example, you can use `(AuthCon
 
 Equipped with the above elements, you can now form more access control expressions. Let's take a look at some examples.
 
+## Ownership constraints
+
+Many applications use the notion of an "owner" to scope mutations. To avoid repeating the same equality checks across every operation, Exograph offers an `@ownership` helper on Postgres types. The annotation generates creation, update, and delete guards that compare a field against a context-sourced value and, optionally, skip those checks for privileged roles.
+
+```exo
+context AuthContext {
+  @jwt("sub") userId: Uuid
+  @jwt("role") role: String
+}
+
+@postgres
+module NotebookModule {
+  @ownership(
+    field = "ownerId",
+    context = "AuthContext.userId",
+    restrictRoles = "coach",
+    exemptRoles = "admin"
+  )
+  type Notebook {
+    @pk id: Uuid = generate_uuid()
+    ownerId: Uuid
+    title: String
+    body: String
+  }
+}
+```
+
+In this example:
+
+- `field` points to the column (or relation path) that stores the owner reference.
+- `context` names the context selection that resolves to the caller's identifier.
+- `restrictRoles` is optional; when supplied, only those roles must match the context id. Other roles pass through unless you also add `exemptRoles`.
+- `exemptRoles` lets privileged roles skip the equality check entirely.
+- The optional `role` parameter defaults to `AuthContext.role` if you use a different role source.
+- `autoAssign` defaults to `true`. When enabled, the builder marks the field as read-only and injects the context value as its default so callers cannot spoof ownership on create.
+
+The generated access expressions execute before every create, update, or delete operation, and they cascade into nested mutations as well. You can pair `autoAssign = false` with `restrictRoles`/`exemptRoles` when you need administrators to set the owner manually while still preventing other roles from reassigning data.
+
 ### Using literals
 
 The simplest access control expression is literal. For example, the following expression will allow access to all users:

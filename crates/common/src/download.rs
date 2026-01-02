@@ -289,6 +289,7 @@ pub async fn take_file_lock(lock_file_path: &Path) -> Result<File> {
     let file = OpenOptions::new()
         .create(true)
         .write(true)
+        .truncate(true)
         .open(lock_file_path)?;
 
     // Try to acquire exclusive lock with timeout

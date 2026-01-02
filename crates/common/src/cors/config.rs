@@ -34,15 +34,6 @@ pub enum CorsResponse<'a> {
 }
 
 impl CorsConfig {
-    pub fn default() -> Self {
-        Self {
-            allow_origin: CorsAllowOrigin::None,
-            allow_methods: CorsAllowMethods::None,
-            allow_headers: CorsAllowHeaders::None,
-            max_age_seconds: None,
-        }
-    }
-
     /// Create a CorsConfig from a list of domains
     ///
     /// The domains list is a comma-separated list of domains, with special values:
@@ -114,7 +105,7 @@ impl CorsConfig {
     ///
     /// - GET (Origin: "https://a.com") -> Allow (in CORS config)
     /// - GET (Origin: "https://b.com") -> NoCorsHeaders (may be same-origin and
-    ///                                                   if not, the browser will enforce CORS due to the lack of CORS headers)
+    ///   if not, the browser will enforce CORS due to the lack of CORS headers)
     ///
     /// - POST (Origin: "https://a.com") -> Allow (in CORS config)
     /// - POST (Origin: "https://b.com") -> NoCorsHeaders (must be same-origin)
@@ -137,6 +128,17 @@ impl CorsConfig {
                 CorsAllowOrigin::None => deny_response(),
             },
             None => CorsResponse::NoCorsHeaders,
+        }
+    }
+}
+
+impl Default for CorsConfig {
+    fn default() -> Self {
+        Self {
+            allow_origin: CorsAllowOrigin::None,
+            allow_methods: CorsAllowMethods::None,
+            allow_headers: CorsAllowHeaders::None,
+            max_age_seconds: None,
         }
     }
 }

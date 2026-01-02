@@ -264,6 +264,14 @@ fn expand_dynamic_default_values(
             (FieldType::Optional(field_type), FieldType::Plain(context_type)) => {
                 field_type.name() == context_type.name()
             }
+            (FieldType::Plain(field_type), FieldType::Optional(context_type)) => {
+                match context_type.as_ref() {
+                    FieldType::Plain(inner_context_type) => {
+                        field_type.name() == inner_context_type.name()
+                    }
+                    _ => false,
+                }
+            }
             _ => false,
         }
     }

@@ -87,6 +87,14 @@ struct ValidationAttempt {
 
 static JWT_DEBUG_FLAG: OnceLock<bool> = OnceLock::new();
 
+type JwksDebugSnapshotEntry = (
+    String,
+    String,
+    Vec<String>,
+    Option<Vec<String>>,
+    Option<Vec<String>>,
+);
+
 pub(super) fn jwt_debug_enabled() -> bool {
     *JWT_DEBUG_FLAG.get_or_init(|| {
         if let Ok(val) = std::env::var("EXO_JWT_DEBUG") {
@@ -109,8 +117,9 @@ where
 
 fn decode_b64_segment(segment: &str) -> Option<Vec<u8>> {
     let mut normalized = segment.replace('\n', "");
-    while normalized.len() % 4 != 0 {
-        normalized.push('=');
+    let remainder = normalized.len() % 4;
+    if remainder != 0 {
+        normalized.extend(std::iter::repeat_n('=', 4 - remainder));
     }
     URL_SAFE_NO_PAD.decode(normalized.as_bytes()).ok()
 }
@@ -121,9 +130,7 @@ fn decode_jwt_header_and_payload(token: &str) -> Option<(Value, Value)> {
     let header_b64 = parts.next()?;
     let payload_b64 = parts.next()?;
     // Ensure the signature part exists even if we don't use it
-    if parts.next().is_none() {
-        return None;
-    }
+    parts.next()?;
 
     let header_bytes = decode_b64_segment(header_b64)?;
     let payload_bytes = decode_b64_segment(payload_b64)?;
@@ -430,13 +437,7 @@ impl JwtAuthenticator {
 
         let mut oidc_validators = Vec::new();
         let mut jwks_validators = Vec::new();
-        let mut jwks_debug_snapshot: Vec<(
-            String,
-            String,
-            Vec<String>,
-            Option<Vec<String>>,
-            Option<Vec<String>>,
-        )> = Vec::new();
+        let mut jwks_debug_snapshot: Vec<JwksDebugSnapshotEntry> = Vec::new();
         let mut static_key_validators = Vec::new();
         let mut static_debug_snapshot = Vec::new();
 
@@ -496,10 +497,7 @@ impl JwtAuthenticator {
                                         "Failed to initialize OIDC provider '{}': {}",
                                         provider_label, e
                                     ),
-                                    source: Box::new(std::io::Error::new(
-                                        std::io::ErrorKind::Other,
-                                        format!("{}", e),
-                                    )),
+                                    source: Box::new(std::io::Error::other(format!("{}", e))),
                                 });
                             }
                         }
@@ -549,10 +547,7 @@ impl JwtAuthenticator {
                                         "Failed to initialize JWKS provider '{}': {}",
                                         provider_label, e
                                     ),
-                                    source: Box::new(std::io::Error::new(
-                                        std::io::ErrorKind::Other,
-                                        format!("{}", e),
-                                    )),
+                                    source: Box::new(std::io::Error::other(format!("{}", e))),
                                 });
                             }
                         }
@@ -579,10 +574,7 @@ impl JwtAuthenticator {
                                 "Failed to initialize OIDC provider '{}': {}",
                                 url_for_log, e
                             ),
-                            source: Box::new(std::io::Error::new(
-                                std::io::ErrorKind::Other,
-                                format!("{}", e),
-                            )),
+                            source: Box::new(std::io::Error::other(format!("{}", e))),
                         });
                     }
                 }
@@ -613,10 +605,7 @@ impl JwtAuthenticator {
                                     "Failed to initialize OIDC provider '{}': {}",
                                     url, e
                                 ),
-                                source: Box::new(std::io::Error::new(
-                                    std::io::ErrorKind::Other,
-                                    format!("{}", e),
-                                )),
+                                source: Box::new(std::io::Error::other(format!("{}", e))),
                             });
                         }
                     }
@@ -673,10 +662,7 @@ impl JwtAuthenticator {
                                     "Failed to initialize JWKS provider '{}': {}",
                                     url, e
                                 ),
-                                source: Box::new(std::io::Error::new(
-                                    std::io::ErrorKind::Other,
-                                    format!("{}", e),
-                                )),
+                                source: Box::new(std::io::Error::other(format!("{}", e))),
                             });
                         }
                     }
@@ -1227,8 +1213,8 @@ impl JwtAuthenticator {
         match &self.authenticator_source {
             AuthenticatorSource::Header(header) => {
                 if let Some(header) = request_head.get_header(header) {
-                    if header.starts_with(TOKEN_PREFIX) {
-                        Ok(Some(header[TOKEN_PREFIX.len()..].to_string()))
+                    if let Some(stripped) = header.strip_prefix(TOKEN_PREFIX) {
+                        Ok(Some(stripped.to_string()))
                     } else {
                         Err(ContextExtractionError::Malformed)
                     }
@@ -1280,7 +1266,7 @@ impl JwtAuthenticator {
                             }
                         }
                     })
-                    .map(|claims| {
+                    .inspect(|claims| {
                         jwt_debug_log(|| {
                             if let Some(obj) = claims.as_object() {
                                 let keys: Vec<&String> = obj.keys().collect();
@@ -1289,7 +1275,6 @@ impl JwtAuthenticator {
                                 "JWT validation succeeded; claims not an object".to_string()
                             }
                         });
-                        claims
                     })
             }
             None => {
