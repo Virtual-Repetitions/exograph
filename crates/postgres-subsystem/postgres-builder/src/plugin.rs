@@ -222,6 +222,44 @@ impl SubsystemBuilder for PostgresSubsystemBuilder {
                     mapped_params: None,
                 },
             ),
+            (
+                "ownership",
+                AnnotationSpec {
+                    targets: &[AnnotationTarget::Type],
+                    no_params: false,
+                    single_params: false,
+                    mapped_params: Some(&[
+                        MappedAnnotationParamSpec {
+                            name: "field",
+                            optional: false,
+                        },
+                        MappedAnnotationParamSpec {
+                            name: "context",
+                            optional: false,
+                        },
+                        MappedAnnotationParamSpec {
+                            name: "role",
+                            optional: true,
+                        },
+                        MappedAnnotationParamSpec {
+                            name: "enforce",
+                            optional: true,
+                        },
+                        MappedAnnotationParamSpec {
+                            name: "restrictRoles",
+                            optional: true,
+                        },
+                        MappedAnnotationParamSpec {
+                            name: "exemptRoles",
+                            optional: true,
+                        },
+                        MappedAnnotationParamSpec {
+                            name: "autoAssign",
+                            optional: true,
+                        },
+                    ]),
+                },
+            ),
         ];
 
         annotations.extend(postgres_core_builder::type_provider::collect_all_hint_annotations());

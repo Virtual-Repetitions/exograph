@@ -19,6 +19,7 @@ use std::{
     path::Path,
 };
 
+use codemap::Span;
 use codemap_diagnostic::{Diagnostic, Level, SpanLabel, SpanStyle};
 use postgres_core_model::types::EntityRepresentation;
 use serde::{Deserialize, Serialize};
@@ -42,7 +43,8 @@ use core_model::{
 use core_model_builder::{
     ast::ast_types::{
         AstAnnotation, AstAnnotationParams, AstExpr, AstField, AstFieldDefault,
-        AstFieldDefaultKind, AstFieldType, AstModel, AstModelKind, default_span,
+        AstFieldDefaultKind, AstFieldType, AstModel, AstModelKind, FieldSelection,
+        FieldSelectionElement, LogicalOp, RelationalOp, default_span,
     },
     builder::resolved_builder::{AnnotationMapHelper, compute_fragment_fields},
     error::ModelBuildingError,
@@ -59,6 +61,348 @@ const DEFAULT_FN_AUTO_INCREMENT: &str = "autoIncrement";
 const DEFAULT_FN_CURRENT_TIME: &str = "now";
 const DEFAULT_FN_GENERATE_UUID: &str = "generate_uuid";
 const DEFAULT_FN_UUID_GENERATE_V4: &str = "uuidGenerateV4";
+
+#[derive(Debug, Clone)]
+struct OwnershipConfig {
+    field: String,
+    field_path: Vec<String>,
+    context_path: String,
+    role_path: String,
+    enforce_create: bool,
+    enforce_update: bool,
+    enforce_delete: bool,
+    restrict_roles: Option<Vec<String>>,
+    exempt_roles: Option<Vec<String>>,
+    auto_assign: bool,
+}
+
+fn field_selection_from_str(path: &str) -> FieldSelection<Typed> {
+    let mut parts = path.split('.').filter(|segment| !segment.is_empty());
+    let first = parts
+        .next()
+        .unwrap_or_else(|| panic!("Invalid field selection '{}'", path));
+
+    let mut selection = FieldSelection::Single(
+        FieldSelectionElement::Identifier(first.to_string(), default_span(), Type::Defer),
+        Type::Defer,
+    );
+
+    for part in parts {
+        selection = FieldSelection::Select(
+            Box::new(selection),
+            FieldSelectionElement::Identifier(part.to_string(), default_span(), Type::Defer),
+            default_span(),
+            Type::Defer,
+        );
+    }
+
+    selection
+}
+
+fn parse_string_literal<'a>(
+    ct: &AstModel<Typed>,
+    label: &str,
+    expr: &'a AstExpr<Typed>,
+    span: Span,
+    errors: &mut Vec<Diagnostic>,
+) -> Option<&'a String> {
+    match expr {
+        AstExpr::StringLiteral(value, _) => Some(value),
+        _ => {
+            push_type_error(
+                ct,
+                span,
+                format!("Expected a string literal for '{}'", label),
+                errors,
+            );
+            None
+        }
+    }
+}
+
+fn parse_string_list(
+    ct: &AstModel<Typed>,
+    label: &str,
+    expr: &AstExpr<Typed>,
+    allow_single: bool,
+    span: Span,
+    errors: &mut Vec<Diagnostic>,
+) -> Option<Vec<String>> {
+    match expr {
+        AstExpr::StringList(list, _) => Some(list.clone()),
+        AstExpr::StringLiteral(value, _) if allow_single => Some(vec![value.clone()]),
+        _ => {
+            push_type_error(
+                ct,
+                span,
+                format!(
+                    "Expected a string{} for '{}'",
+                    if allow_single {
+                        " or string list"
+                    } else {
+                        " list"
+                    },
+                    label
+                ),
+                errors,
+            );
+            None
+        }
+    }
+}
+
+fn parse_bool_literal(
+    ct: &AstModel<Typed>,
+    label: &str,
+    expr: &AstExpr<Typed>,
+    span: Span,
+    errors: &mut Vec<Diagnostic>,
+) -> Option<bool> {
+    match expr {
+        AstExpr::BooleanLiteral(value, _) => Some(*value),
+        _ => {
+            push_type_error(
+                ct,
+                span,
+                format!("Expected a boolean literal for '{}'", label),
+                errors,
+            );
+            None
+        }
+    }
+}
+
+fn parse_ownership_annotation(
+    ct: &AstModel<Typed>,
+    annotation: &AstAnnotation<Typed>,
+    errors: &mut Vec<Diagnostic>,
+) -> Option<OwnershipConfig> {
+    let params = match &annotation.params {
+        AstAnnotationParams::Map(map, _) => map,
+        _ => {
+            push_type_error(
+                ct,
+                annotation.span,
+                "@ownership expects named parameters".to_string(),
+                errors,
+            );
+            return None;
+        }
+    };
+
+    let field_expr = match params.get("field") {
+        Some(expr) => expr,
+        None => {
+            push_type_error(
+                ct,
+                annotation.span,
+                "@ownership requires a 'field' parameter".to_string(),
+                errors,
+            );
+            return None;
+        }
+    };
+    let field = parse_string_literal(ct, "field", field_expr, annotation.span, errors)?.clone();
+    let field_path: Vec<String> = field
+        .split('.')
+        .filter(|segment| !segment.is_empty())
+        .map(|segment| segment.to_string())
+        .collect();
+
+    if field_path.is_empty() {
+        push_type_error(
+            ct,
+            annotation.span,
+            "@ownership requires a non-empty 'field' path",
+            errors,
+        );
+        return None;
+    }
+
+    let context_expr = match params.get("context") {
+        Some(expr) => expr,
+        None => {
+            push_type_error(
+                ct,
+                annotation.span,
+                "@ownership requires a 'context' parameter".to_string(),
+                errors,
+            );
+            return None;
+        }
+    };
+    let context_path =
+        parse_string_literal(ct, "context", context_expr, annotation.span, errors)?.clone();
+
+    let role_path = match params.get("role") {
+        Some(expr) => parse_string_literal(ct, "role", expr, annotation.span, errors)?.clone(),
+        None => "AuthContext.role".to_string(),
+    };
+
+    let enforce = match params.get("enforce") {
+        Some(expr) => parse_string_list(ct, "enforce", expr, true, annotation.span, errors),
+        None => Some(vec![
+            "create".to_string(),
+            "update".to_string(),
+            "delete".to_string(),
+        ]),
+    }
+    .unwrap_or_default();
+
+    let mut enforce_create = false;
+    let mut enforce_update = false;
+    let mut enforce_delete = false;
+    for op in enforce {
+        match op.as_str() {
+            "create" => enforce_create = true,
+            "update" => enforce_update = true,
+            "delete" => enforce_delete = true,
+            other => {
+                push_type_error(
+                    ct,
+                    annotation.span,
+                    format!(
+                        "Unsupported operation '{}' in @ownership enforce list",
+                        other
+                    ),
+                    errors,
+                );
+            }
+        }
+    }
+
+    let restrict_roles = params.get("restrictRoles").and_then(|expr| {
+        parse_string_list(ct, "restrictRoles", expr, true, annotation.span, errors)
+    });
+
+    let exempt_roles = params
+        .get("exemptRoles")
+        .and_then(|expr| parse_string_list(ct, "exemptRoles", expr, true, annotation.span, errors));
+
+    let auto_assign = params
+        .get("autoAssign")
+        .and_then(|expr| parse_bool_literal(ct, "autoAssign", expr, annotation.span, errors))
+        .unwrap_or(true);
+
+    Some(OwnershipConfig {
+        field,
+        field_path,
+        context_path,
+        role_path,
+        enforce_create,
+        enforce_update,
+        enforce_delete,
+        restrict_roles,
+        exempt_roles,
+        auto_assign,
+    })
+}
+
+fn combine_with_guard(
+    existing: Option<AstExpr<Typed>>,
+    guard: AstExpr<Typed>,
+) -> Option<AstExpr<Typed>> {
+    Some(match existing {
+        Some(expr) => AstExpr::LogicalOp(LogicalOp::And(
+            Box::new(expr),
+            Box::new(guard),
+            default_span(),
+            Type::Defer,
+        )),
+        None => guard,
+    })
+}
+
+fn build_ownership_guard_expr(config: &OwnershipConfig) -> AstExpr<Typed> {
+    let owner_expr =
+        AstExpr::FieldSelection(field_selection_from_str(&format!("self.{}", config.field)));
+    let context_expr = AstExpr::FieldSelection(field_selection_from_str(&config.context_path));
+
+    let context_not_null = AstExpr::LogicalOp(LogicalOp::Not(
+        Box::new(AstExpr::RelationalOp(RelationalOp::Eq(
+            Box::new(context_expr.clone()),
+            Box::new(AstExpr::NullLiteral(default_span())),
+            Type::Defer,
+        ))),
+        default_span(),
+        Type::Defer,
+    ));
+
+    let equality = AstExpr::RelationalOp(RelationalOp::Eq(
+        Box::new(owner_expr),
+        Box::new(context_expr),
+        Type::Defer,
+    ));
+
+    let mut guard = AstExpr::LogicalOp(LogicalOp::And(
+        Box::new(context_not_null),
+        Box::new(equality),
+        default_span(),
+        Type::Defer,
+    ));
+
+    let build_role_equals = |role: &str| {
+        AstExpr::RelationalOp(RelationalOp::Eq(
+            Box::new(AstExpr::FieldSelection(field_selection_from_str(
+                &config.role_path,
+            ))),
+            Box::new(AstExpr::StringLiteral(role.to_string(), default_span())),
+            Type::Defer,
+        ))
+    };
+
+    let build_role_membership = |roles: &[String]| -> Option<AstExpr<Typed>> {
+        let mut iter = roles.iter();
+        let first = iter.next()?;
+        let mut combined = build_role_equals(first);
+
+        for role in iter {
+            let next = build_role_equals(role);
+            combined = AstExpr::LogicalOp(LogicalOp::Or(
+                Box::new(combined),
+                Box::new(next),
+                default_span(),
+                Type::Defer,
+            ));
+        }
+
+        Some(combined)
+    };
+
+    if let Some(restrict_roles) = &config.restrict_roles {
+        if !restrict_roles.is_empty() {
+            if let Some(role_in_restrict) = build_role_membership(restrict_roles) {
+                let not_role_in_restrict = AstExpr::LogicalOp(LogicalOp::Not(
+                    Box::new(role_in_restrict),
+                    default_span(),
+                    Type::Defer,
+                ));
+
+                guard = AstExpr::LogicalOp(LogicalOp::Or(
+                    Box::new(not_role_in_restrict),
+                    Box::new(guard),
+                    default_span(),
+                    Type::Defer,
+                ));
+            }
+        }
+    }
+
+    if let Some(exempt_roles) = &config.exempt_roles {
+        if !exempt_roles.is_empty() {
+            if let Some(role_in_exempt) = build_role_membership(exempt_roles) {
+                guard = AstExpr::LogicalOp(LogicalOp::Or(
+                    Box::new(role_in_exempt),
+                    Box::new(guard),
+                    default_span(),
+                    Type::Defer,
+                ));
+            }
+        }
+    }
+
+    guard
+}
 
 /// Represents the different ways a field's column name(s) can be configured
 #[derive(Debug, Clone, PartialEq)]
@@ -236,7 +580,12 @@ fn resolve_composite_type(
             });
         }
 
-        let access = if is_json {
+        let ownership_annotation = ct.annotations.annotations.get("ownership");
+
+        let ownership_config = ownership_annotation
+            .and_then(|annotation| parse_ownership_annotation(ct, annotation, errors));
+
+        let mut access = if is_json {
             // As if the user has annotated with `access(true)`
             ResolvedAccess {
                 default: Some(AstExpr::BooleanLiteral(true, default_span())),
@@ -248,14 +597,49 @@ fn resolve_composite_type(
         let name = ct.name.clone();
         let plural_name = plural_annotation_value.unwrap_or_else(|| ct.name.to_plural()); // fallback to automatically pluralizing name
 
-        let resolved_fields = resolve_composite_type_fields(
+        let (resolved_fields, ownership_field_found) = resolve_composite_type_fields(
             ct,
             is_json,
             table_managed,
             module_base_path,
             typechecked_system,
+            ownership_config.as_ref(),
             errors,
         );
+
+        if let Some(annotation) = ownership_annotation {
+            if ownership_config.is_some() && !ownership_field_found {
+                push_type_error(
+                    ct,
+                    annotation.span,
+                    format!(
+                        "Field '{}' specified in @ownership was not found on type '{}'",
+                        ownership_config.as_ref().unwrap().field,
+                        ct.name
+                    ),
+                    errors,
+                );
+            }
+        }
+
+        if ownership_config.is_some() && ownership_field_found {
+            if let Some(config) = ownership_config.as_ref() {
+                let guard_expr = build_ownership_guard_expr(config);
+
+                if config.enforce_create {
+                    access.creation =
+                        combine_with_guard(access.creation.take(), guard_expr.clone());
+                }
+
+                if config.enforce_update {
+                    access.update = combine_with_guard(access.update.take(), guard_expr.clone());
+                }
+
+                if config.enforce_delete {
+                    access.delete = combine_with_guard(access.delete.take(), guard_expr);
+                }
+            }
+        }
 
         resolved_postgres_types.add(
             &ct.name,
@@ -284,117 +668,141 @@ fn resolve_composite_type_fields(
     table_managed: bool,
     module_base_path: &Path,
     typechecked_system: &TypecheckedSystem,
+    ownership_config: Option<&OwnershipConfig>,
     errors: &mut Vec<Diagnostic>,
-) -> Vec<ResolvedField> {
+) -> (Vec<ResolvedField>, bool) {
     let fragment_fields = compute_fragment_fields(ct, errors, typechecked_system);
 
-    ct.fields
-        .iter()
-        .chain(fragment_fields.iter().cloned())
-        .flat_map(|field| {
-            let update_sync = field.annotations.contains("update");
-            let readonly = field.annotations.contains("readonly");
+    let mut resolved_fields = Vec::new();
+    let mut ownership_field_found = false;
 
-            let access_annotation = field.annotations.get("access");
+    for field in ct.fields.iter().chain(fragment_fields.into_iter()) {
+        let update_sync = field.annotations.contains("update");
+        let mut readonly = field.annotations.contains("readonly");
 
-            if is_json && access_annotation.is_some() {
-                errors.push(Diagnostic {
-                    level: Level::Error,
-                    message: format!(
-                        "Cannot use @access for field '{}' in a type with a '@json' annotation",
-                        field.name
-                    ),
-                    code: Some("C000".to_string()),
-                    spans: vec![SpanLabel {
-                        span: field.span,
-                        style: SpanStyle::Primary,
-                        label: None,
-                    }],
-                });
-            }
+        let access_annotation = field.annotations.get("access");
 
-            // For fields, by default, we assume the `access(true)` annotation
-            let access = match access_annotation {
-                Some(_) => build_access(access_annotation),
-                None => ResolvedAccess {
-                    default: AstExpr::BooleanLiteral(true, default_span()).into(),
-                    ..Default::default()
-                },
-            };
-
-            let typ = resolve_field_type(
-                &field.typ.to_typ(&typechecked_system.types),
-                &typechecked_system.types,
-            );
-
-            if let Some(computed_params) = field.annotations.get("computed") {
-                let resolved_computed =
-                    parse_computed_field(module_base_path, field, computed_params, errors)?;
-
-                validate_computed_field_annotations(field, update_sync, errors);
-
-                return Some(ResolvedField {
-                    name: field.name.clone(),
-                    typ,
-                    column_names: vec![],
-                    self_column: false,
-                    is_pk: false,
-                    access,
-                    type_hint: None,
-                    unique_constraints: vec![],
-                    indices: vec![],
-                    cardinality: None,
-                    default_value: None,
-                    update_sync: false,
-                    readonly: true,
-                    doc_comments: field.doc_comments.clone(),
-                    computed: Some(resolved_computed),
+        if is_json && access_annotation.is_some() {
+            errors.push(Diagnostic {
+                level: Level::Error,
+                message: format!(
+                    "Cannot use @access for field '{}' in a type with a '@json' annotation",
+                    field.name
+                ),
+                code: Some("C000".to_string()),
+                spans: vec![SpanLabel {
                     span: field.span,
-                });
+                    style: SpanStyle::Primary,
+                    label: None,
+                }],
+            });
+        }
+
+        // For fields, by default, we assume the `access(true)` annotation
+        let access = match access_annotation {
+            Some(_) => build_access(access_annotation),
+            None => ResolvedAccess {
+                default: AstExpr::BooleanLiteral(true, default_span()).into(),
+                ..Default::default()
+            },
+        };
+
+        let typ = resolve_field_type(
+            &field.typ.to_typ(&typechecked_system.types),
+            &typechecked_system.types,
+        );
+
+        let mut field_default = field
+            .default_value
+            .as_ref()
+            .map(|v| resolve_field_default_type(v, &typ, errors));
+
+        if let Some(computed_params) = field.annotations.get("computed") {
+            let resolved_computed =
+                match parse_computed_field(module_base_path, field, computed_params, errors) {
+                    Some(c) => c,
+                    None => continue,
+                };
+
+            validate_computed_field_annotations(field, update_sync, errors);
+
+            resolved_fields.push(ResolvedField {
+                name: field.name.clone(),
+                typ,
+                column_names: vec![],
+                self_column: false,
+                is_pk: false,
+                access,
+                type_hint: None,
+                unique_constraints: vec![],
+                indices: vec![],
+                cardinality: None,
+                default_value: None,
+                update_sync: false,
+                readonly: true,
+                doc_comments: field.doc_comments.clone(),
+                computed: Some(resolved_computed),
+                span: field.span,
+            });
+            continue;
+        }
+
+        let column_info = compute_column_info(ct, field, &typechecked_system.types, table_managed);
+
+        let ColumnInfo {
+            names: column_names,
+            self_column,
+            unique_constraints,
+            indices,
+            cardinality,
+        } = match column_info {
+            Ok(info) => info,
+            Err(e) => {
+                errors.push(e);
+                continue;
             }
+        };
 
-            let column_info =
-                compute_column_info(ct, field, &typechecked_system.types, table_managed);
+        if let Some(config) = ownership_config {
+            if let Some(base_field) = config.field_path.first() {
+                if base_field == &field.name {
+                    ownership_field_found = true;
 
-            match column_info {
-                Ok(ColumnInfo {
-                    names: column_names,
-                    self_column,
-                    unique_constraints,
-                    indices,
-                    cardinality,
-                }) => {
-                    let default_value = field
-                        .default_value
-                        .as_ref()
-                        .map(|v| resolve_field_default_type(v, &typ, errors));
-
-                    Some(ResolvedField {
-                        name: field.name.clone(),
-                        typ,
-                        column_names,
-                        self_column,
-                        is_pk: field.annotations.contains("pk"),
-                        access,
-                        type_hint: build_type_hint(field, &typechecked_system.types, errors),
-                        unique_constraints,
-                        indices,
-                        cardinality,
-                        default_value,
-                        update_sync,
-                        readonly,
-                        doc_comments: field.doc_comments.clone(),
-                        computed: None,
-                        span: field.span,
-                    })
-                }
-                Err(e) => {
-                    errors.push(e);
-                    None
+                    if config.auto_assign && config.field_path.len() == 1 {
+                        readonly = true;
+                        if field_default.is_none() {
+                            let context_expr = AstExpr::FieldSelection(field_selection_from_str(
+                                &config.context_path,
+                            ));
+                            field_default =
+                                Some(ResolvedFieldDefault::Value(Box::new(context_expr)));
+                        }
+                    }
                 }
             }
-        })
-        .collect()
+        }
+
+        resolved_fields.push(ResolvedField {
+            name: field.name.clone(),
+            typ,
+            column_names,
+            self_column,
+            is_pk: field.annotations.contains("pk"),
+            access,
+            type_hint: build_type_hint(field, &typechecked_system.types, errors),
+            unique_constraints,
+            indices,
+            cardinality,
+            default_value: field_default,
+            update_sync,
+            readonly,
+            doc_comments: field.doc_comments.clone(),
+            computed: None,
+            span: field.span,
+        });
+    }
+
+    (resolved_fields, ownership_field_found)
 }
 
 fn push_field_error(
@@ -408,6 +816,24 @@ fn push_field_error(
         code: Some("C000".to_string()),
         spans: vec![SpanLabel {
             span: field.span,
+            style: SpanStyle::Primary,
+            label: None,
+        }],
+    });
+}
+
+fn push_type_error(
+    _ct: &AstModel<Typed>,
+    span: Span,
+    message: impl Into<String>,
+    errors: &mut Vec<Diagnostic>,
+) {
+    errors.push(Diagnostic {
+        level: Level::Error,
+        message: message.into(),
+        code: Some("C000".to_string()),
+        spans: vec![SpanLabel {
+            span,
             style: SpanStyle::Primary,
             label: None,
         }],
@@ -1491,8 +1917,10 @@ fn extract_table_annotation(
 
 #[cfg(test)]
 mod tests {
+    use crate::resolved_type::ResolvedFieldDefault;
     use crate::test_util::create_resolved_system_from_src;
 
+    use core_model_builder::ast::ast_types::{AstExpr, FieldSelectionElement};
     use multiplatform_test::multiplatform_test;
     use std::fs::File;
 
@@ -1826,6 +2254,78 @@ mod tests {
         let resolved = create_resolved_system_from_src(src);
 
         assert!(resolved.is_err());
+    }
+
+    #[multiplatform_test]
+    fn ownership_annotation_enforces_owner_bindings() {
+        let src = r#"
+        context AuthContext {
+            @jwt("sub") userId: Int
+            @jwt("role") role: String
+        }
+
+        @postgres
+        module OwnershipModule {
+            @ownership(
+                field = "ownerId",
+                context = "AuthContext.userId",
+                restrictRoles = "coach",
+                exemptRoles = "admin"
+            )
+            type Note {
+                @pk id: Int = autoIncrement()
+                ownerId: Int
+                body: String
+            }
+        }
+        "#;
+
+        let resolved = create_resolved_system_from_src(src).expect("should resolve");
+        let note_type = resolved.get_by_key("Note").unwrap().as_composite();
+
+        let owner_field = note_type
+            .fields
+            .iter()
+            .find(|field| field.name == "ownerId")
+            .expect("ownerId field exists");
+        assert!(
+            owner_field.readonly,
+            "ownership auto-assign should mark the field as readonly"
+        );
+        match owner_field
+            .default_value
+            .as_ref()
+            .expect("ownership should provide a default")
+        {
+            ResolvedFieldDefault::Value(expr) => match expr.as_ref() {
+                AstExpr::FieldSelection(selection) => {
+                    let path: Vec<String> = selection
+                        .path()
+                        .iter()
+                        .map(|element| match element {
+                            FieldSelectionElement::Identifier(name, _, _) => name.clone(),
+                            _ => panic!("unexpected non-identifier in context path"),
+                        })
+                        .collect();
+                    assert_eq!(path, vec!["AuthContext".to_string(), "userId".to_string()]);
+                }
+                other => panic!("unexpected default expression: {:?}", other),
+            },
+            other => panic!("unexpected default variant: {:?}", other),
+        }
+
+        assert!(
+            note_type.access.creation.is_some(),
+            "creation guard should be generated"
+        );
+        assert!(
+            note_type.access.update.is_some(),
+            "update guard should be generated"
+        );
+        assert!(
+            note_type.access.delete.is_some(),
+            "delete guard should be generated"
+        );
     }
 
     #[multiplatform_test]
