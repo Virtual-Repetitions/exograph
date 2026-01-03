@@ -109,6 +109,8 @@ async fn map_single<'a>(
     subsystem: &'a PostgresGraphQLSubsystem,
     request_context: &'a RequestContext<'a>,
 ) -> Result<(InsertionRow, Vec<AbstractPredicate>), PostgresExecutionError> {
+    let enriched_argument = enrich_argument_for_access(data_type, argument, subsystem);
+    let access_input_value = enriched_argument.as_ref().unwrap_or(argument);
     let AccessCheckOutcome {
         precheck_predicate, ..
     } = check_access(
@@ -118,9 +120,9 @@ async fn map_single<'a>(
         subsystem,
         request_context,
         Some(&AccessInput {
-            value: argument,
+            value: access_input_value,
             ignore_missing_value: true,
-            aliases: HashMap::new(),
+            aliases: Default::default(),
         }),
     )
     .await?;
@@ -199,6 +201,77 @@ async fn map_single<'a>(
         join_all(row).await.into_iter().flatten().collect();
 
     Ok((InsertionRow { elems: row? }, vec![precheck_predicate]))
+}
+
+fn enrich_argument_for_access(
+    data_type: &MutationType,
+    argument: &Val,
+    subsystem: &PostgresGraphQLSubsystem,
+) -> Option<Val> {
+    let argument_object = match argument {
+        Val::Object(map) => map,
+        _ => return None,
+    };
+
+    let mut column_to_field: HashMap<ColumnId, &str> = HashMap::new();
+    for field in &data_type.fields {
+        if let PostgresRelation::Scalar { column_id, .. } = &field.relation {
+            column_to_field.insert(*column_id, field.name.as_str());
+        }
+    }
+
+    let mut enriched = argument_object.clone();
+    let mut modified = false;
+
+    for field in &data_type.fields {
+        if enriched.contains_key(&field.name) {
+            continue;
+        }
+
+        if let PostgresRelation::ManyToOne { relation, .. } = &field.relation {
+            let relation_details = relation
+                .relation_id
+                .deref(&subsystem.core_subsystem.database);
+
+            let mut related_fields: HashMap<String, Val> = HashMap::new();
+
+            for (pair, pk_field_id) in relation_details
+                .column_pairs
+                .iter()
+                .zip(relation.foreign_pk_field_ids.iter())
+            {
+                let fk_field_name = match column_to_field.get(&pair.self_column_id) {
+                    Some(name) => *name,
+                    None => {
+                        related_fields.clear();
+                        break;
+                    }
+                };
+
+                let fk_value = match argument_object.get(fk_field_name) {
+                    Some(value) => value.clone(),
+                    None => {
+                        related_fields.clear();
+                        break;
+                    }
+                };
+
+                let pk_field = pk_field_id.resolve(&subsystem.core_subsystem.entity_types);
+                related_fields.insert(pk_field.name.clone(), fk_value);
+            }
+
+            if !related_fields.is_empty() {
+                enriched.insert(field.name.clone(), Val::Object(related_fields));
+                modified = true;
+            }
+        }
+    }
+
+    if modified {
+        Some(Val::Object(enriched))
+    } else {
+        None
+    }
 }
 
 async fn map_self_column<'a>(
