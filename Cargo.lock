@@ -991,7 +991,7 @@ dependencies = [
 
 [[package]]
 name = "builder"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "cc",
  "codemap",
@@ -1366,7 +1366,7 @@ checksum = "a1d728cc89cf3aee9ff92b05e62b19ee65a02b5702cff7d5a377e32c6ae29d8d"
 
 [[package]]
 name = "cli"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "anyhow",
  "async-recursion",
@@ -1519,7 +1519,7 @@ checksum = "55b672471b4e9f9e95499ea597ff64941a309b2cdbffcc46f2cc5e2d971fd335"
 
 [[package]]
 name = "common"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "anyhow",
  "async-graphql-value",
@@ -1714,7 +1714,7 @@ dependencies = [
 
 [[package]]
 name = "core-model"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-graphql-parser",
  "async-graphql-value",
@@ -1725,7 +1725,7 @@ dependencies = [
 
 [[package]]
 name = "core-model-builder"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "codemap",
  "codemap-diagnostic",
@@ -1737,7 +1737,7 @@ dependencies = [
 
 [[package]]
 name = "core-plugin-interface"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-trait",
  "built",
@@ -1751,7 +1751,7 @@ dependencies = [
 
 [[package]]
 name = "core-plugin-shared"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "base16ct 0.3.0",
  "bincode 2.0.1",
@@ -1768,7 +1768,7 @@ dependencies = [
 
 [[package]]
 name = "core-resolver"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-graphql-parser",
  "async-graphql-value",
@@ -1800,11 +1800,11 @@ dependencies = [
 
 [[package]]
 name = "core-rest-model"
-version = "0.26.2"
+version = "0.26.3"
 
 [[package]]
 name = "core-router"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "core-plugin-interface",
  "core-plugin-shared",
@@ -2366,7 +2366,7 @@ checksum = "26bf8fc351c5ed29b5c2f0cbbac1b209b74f60ecd62e675a998df72c49af5204"
 
 [[package]]
 name = "deno-builder"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-trait",
  "core-model-builder",
@@ -2377,7 +2377,7 @@ dependencies = [
 
 [[package]]
 name = "deno-graphql-builder"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-trait",
  "codemap",
@@ -2396,7 +2396,7 @@ dependencies = [
 
 [[package]]
 name = "deno-graphql-model"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-graphql-parser",
  "bincode 2.0.1",
@@ -2408,7 +2408,7 @@ dependencies = [
 
 [[package]]
 name = "deno-graphql-resolver"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "anyhow",
  "async-graphql-parser",
@@ -2433,7 +2433,7 @@ dependencies = [
 
 [[package]]
 name = "deno-resolver"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-trait",
  "core-plugin-interface",
@@ -4269,7 +4269,7 @@ checksum = "31ae425815400e5ed474178a7a22e275a9687086a12ca63ec793ff292d8fdae8"
 
 [[package]]
 name = "exo-deno"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-trait",
  "ctor",
@@ -4295,7 +4295,7 @@ dependencies = [
 
 [[package]]
 name = "exo-env"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "dotenvy",
  "thiserror 2.0.17",
@@ -4303,7 +4303,7 @@ dependencies = [
 
 [[package]]
 name = "exo-sql"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "bincode 2.0.1",
  "bytes",
@@ -4345,7 +4345,7 @@ dependencies = [
 
 [[package]]
 name = "exo-wasm"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -4924,7 +4924,7 @@ dependencies = [
 
 [[package]]
 name = "graphql-router"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-graphql-parser",
  "async-stream",
@@ -5775,7 +5775,7 @@ dependencies = [
 
 [[package]]
 name = "introspection-resolver"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-graphql-parser",
  "async-graphql-value",
@@ -5790,7 +5790,7 @@ dependencies = [
 
 [[package]]
 name = "introspection-util"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "anyhow",
  "ctor",
@@ -6334,7 +6334,7 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "lsp"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "anyhow",
  "builder",
@@ -6425,7 +6425,7 @@ checksum = "4facc753ae494aeb6e3c22f839b158aebd4f9270f55cd3c79906c45476c47ab4"
 
 [[package]]
 name = "mcp-bridge"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -6439,7 +6439,7 @@ dependencies = [
 
 [[package]]
 name = "mcp-router"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-graphql-parser",
  "async-stream",
@@ -7566,7 +7566,7 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
 name = "playground-router"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-trait",
  "common",
@@ -7648,7 +7648,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-builder"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-trait",
  "builder",
@@ -7669,7 +7669,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-builder-dynamic"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "core-plugin-interface",
  "postgres-builder",
@@ -7677,7 +7677,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-core-builder"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "builder",
  "codemap",
@@ -7706,7 +7706,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-core-model"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "bincode 2.0.1",
  "builder",
@@ -7726,7 +7726,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-core-resolver"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -7750,7 +7750,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-graphql-builder"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "core-model",
  "core-model-builder",
@@ -7764,7 +7764,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-graphql-model"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-graphql-parser",
  "async-graphql-value",
@@ -7779,7 +7779,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-graphql-resolver"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-graphql-parser",
  "async-recursion",
@@ -7827,7 +7827,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-resolver"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-trait",
  "common",
@@ -7849,7 +7849,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-resolver-dynamic"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "core-plugin-interface",
  "postgres-resolver",
@@ -7857,7 +7857,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-rest-builder"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "core-model-builder",
  "core-plugin-shared",
@@ -7868,7 +7868,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-rest-model"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "bincode 2.0.1",
  "common",
@@ -7884,7 +7884,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-rest-resolver"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-trait",
  "common",
@@ -7897,7 +7897,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-rpc-builder"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "core-model-builder",
  "core-plugin-shared",
@@ -7908,7 +7908,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-rpc-model"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "bincode 2.0.1",
  "core-model",
@@ -7920,7 +7920,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-rpc-resolver"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-trait",
  "common",
@@ -8491,7 +8491,7 @@ checksum = "1e061d1b48cb8d38042de4ae0a7a6401009d6143dc80d2e2d6f31f0bdd6470c7"
 
 [[package]]
 name = "rest-router"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-trait",
  "common",
@@ -8561,7 +8561,7 @@ dependencies = [
 
 [[package]]
 name = "rpc-router"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -9179,7 +9179,7 @@ dependencies = [
 
 [[package]]
 name = "server-actix"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "actix-web",
  "common",
@@ -9197,7 +9197,7 @@ dependencies = [
 
 [[package]]
 name = "server-aws-lambda"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "builder",
  "common",
@@ -9218,7 +9218,7 @@ dependencies = [
 
 [[package]]
 name = "server-cf-worker"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "common",
  "console_error_panic_hook",
@@ -9243,7 +9243,7 @@ dependencies = [
 
 [[package]]
 name = "server-common"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "common",
  "core-plugin-interface",
@@ -9664,7 +9664,7 @@ dependencies = [
 
 [[package]]
 name = "subsystem-model-builder-util"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-trait",
  "builder",
@@ -9681,7 +9681,7 @@ dependencies = [
 
 [[package]]
 name = "subsystem-model-util"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-graphql-parser",
  "core-model",
@@ -10168,7 +10168,7 @@ dependencies = [
 
 [[package]]
 name = "system-router"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-trait",
  "common",
@@ -10269,7 +10269,7 @@ dependencies = [
 
 [[package]]
 name = "testing"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "anyhow",
  "async-graphql-parser",
@@ -11456,7 +11456,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-builder"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-trait",
  "core-model-builder",
@@ -11467,7 +11467,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-builder-dynamic"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "core-plugin-interface",
  "wasm-builder",
@@ -11516,7 +11516,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-graphql-builder"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-trait",
  "core-model",
@@ -11529,7 +11529,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-graphql-model"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-graphql-parser",
  "bincode 2.0.1",
@@ -11541,7 +11541,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-graphql-resolver"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-graphql-parser",
  "async-trait",
@@ -11557,7 +11557,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-resolver"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-trait",
  "core-plugin-interface",
@@ -11571,7 +11571,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-resolver-dynamic"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "core-plugin-interface",
  "wasm-resolver",
