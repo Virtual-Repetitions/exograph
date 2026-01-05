@@ -26,4 +26,4 @@ rustflags = [
 ]
 
 [target.x86_64-unknown-linux-gnu]
-rustflags = ["-Clink-arg=--threads=1"]
+rustflags = ["-Clink-arg=-Wl,--threads=1"]
