@@ -17,7 +17,8 @@ use crate::{
 use common::context::RequestContext;
 use common::value::Val;
 use exo_sql::{
-    AbstractOrderBy, AbstractOrderByExpr, AbstractPredicate, Ordering, PhysicalColumnPath,
+    AbstractOrderBy, AbstractOrderByExpr, AbstractPredicate, ColumnPathLink, Ordering,
+    PhysicalColumnPath,
 };
 use postgres_core_resolver::postgres_execution_error::PostgresExecutionError;
 
@@ -33,18 +34,52 @@ pub(crate) struct OrderByParameterInput<'a> {
     pub parent_column_path: Option<PhysicalColumnPath>,
 }
 
+#[derive(Debug)]
+pub(crate) struct OrderByComputation {
+    pub order_by: AbstractOrderBy,
+    pub predicate: AbstractPredicate,
+}
+
+impl OrderByComputation {
+    fn new(order_by: AbstractOrderBy, predicate: AbstractPredicate) -> Self {
+        Self {
+            order_by,
+            predicate,
+        }
+    }
+
+    fn combine(results: Vec<Self>) -> Self {
+        let mut expressions = Vec::new();
+        let mut predicate = AbstractPredicate::True;
+
+        for result in results {
+            let OrderByComputation {
+                order_by,
+                predicate: result_predicate,
+            } = result;
+            let AbstractOrderBy(mut exprs) = order_by;
+            expressions.append(&mut exprs);
+            predicate = AbstractPredicate::and(predicate, result_predicate);
+        }
+
+        OrderByComputation::new(AbstractOrderBy(expressions), predicate)
+    }
+}
+
 #[async_trait]
-impl<'a> SQLMapper<'a, AbstractOrderBy> for OrderByParameterInput<'a> {
+impl<'a> SQLMapper<'a, OrderByComputation> for OrderByParameterInput<'a> {
     async fn to_sql(
         self,
         argument: &'a Val,
         subsystem: &'a PostgresGraphQLSubsystem,
         request_context: &'a RequestContext<'a>,
-    ) -> Result<AbstractOrderBy, PostgresExecutionError> {
+    ) -> Result<OrderByComputation, PostgresExecutionError> {
         let parameter_type = &subsystem.order_by_types[self.param.typ.innermost().type_id];
-        fn flatten<E>(order_bys: Result<Vec<AbstractOrderBy>, E>) -> Result<AbstractOrderBy, E> {
-            let mapped = order_bys?.into_iter().flat_map(|elem| elem.0).collect();
-            Ok(AbstractOrderBy(mapped))
+
+        fn flatten<E>(
+            order_bys: Result<Vec<OrderByComputation>, E>,
+        ) -> Result<OrderByComputation, E> {
+            order_bys.map(OrderByComputation::combine)
         }
 
         match argument {
@@ -96,7 +131,7 @@ async fn order_by_pair<'a>(
     parent_column_path: Option<PhysicalColumnPath>,
     subsystem: &'a PostgresGraphQLSubsystem,
     request_context: &'a RequestContext<'a>,
-) -> Result<AbstractOrderBy, PostgresExecutionError> {
+) -> Result<OrderByComputation, PostgresExecutionError> {
     match &typ.kind {
         OrderByParameterTypeKind::Composite { parameters } => {
             match parameters.iter().find(|p| p.name == parameter_name) {
@@ -113,9 +148,25 @@ async fn order_by_pair<'a>(
                         None => AbstractPredicate::True,
                     };
 
-                    if field_access != AbstractPredicate::True {
+                    if field_access == AbstractPredicate::False {
                         return Err(PostgresExecutionError::Authorization);
                     }
+
+                    let is_relation = matches!(
+                        parameter.column_path_link,
+                        Some(ColumnPathLink::Relation(_))
+                    );
+
+                    let field_access_predicate = if is_relation {
+                        // Relation fields currently require unconditional access while ordering
+                        if field_access == AbstractPredicate::True {
+                            AbstractPredicate::True
+                        } else {
+                            return Err(PostgresExecutionError::Authorization);
+                        }
+                    } else {
+                        field_access
+                    };
 
                     let base_param_type =
                         &subsystem.order_by_types[parameter.typ.innermost().type_id];
@@ -128,10 +179,13 @@ async fn order_by_pair<'a>(
                         OrderByParameterTypeKind::Primitive => {
                             let new_column_path = new_column_path.unwrap();
                             ordering(parameter_value).map(|ordering| {
-                                AbstractOrderBy(vec![(
-                                    AbstractOrderByExpr::Column(new_column_path),
-                                    ordering,
-                                )])
+                                OrderByComputation::new(
+                                    AbstractOrderBy(vec![(
+                                        AbstractOrderByExpr::Column(new_column_path),
+                                        ordering,
+                                    )]),
+                                    field_access_predicate,
+                                )
                             })
                         }
                         OrderByParameterTypeKind::Vector => match parameter_value {
@@ -147,18 +201,21 @@ async fn order_by_pair<'a>(
                                 let vector_value = to_pg_vector(value, parameter_name)?;
 
                                 ordering(order).map(|ordering| {
-                                    AbstractOrderBy(vec![(
-                                        AbstractOrderByExpr::VectorDistance(
-                                            ColumnPath::Physical(new_column_path),
-                                            ColumnPath::Param(SQLParamContainer::f32_array(
-                                                vector_value,
-                                            )),
-                                            parameter
-                                                .vector_distance_function
-                                                .unwrap_or(VectorDistanceFunction::default()),
-                                        ),
-                                        ordering,
-                                    )])
+                                    OrderByComputation::new(
+                                        AbstractOrderBy(vec![(
+                                            AbstractOrderByExpr::VectorDistance(
+                                                ColumnPath::Physical(new_column_path),
+                                                ColumnPath::Param(SQLParamContainer::f32_array(
+                                                    vector_value,
+                                                )),
+                                                parameter
+                                                    .vector_distance_function
+                                                    .unwrap_or(VectorDistanceFunction::default()),
+                                            ),
+                                            ordering,
+                                        )]),
+                                        field_access_predicate,
+                                    )
                                 })
                             }
                             _ => Err(PostgresExecutionError::Validation(
@@ -167,12 +224,17 @@ async fn order_by_pair<'a>(
                             )),
                         },
                         OrderByParameterTypeKind::Composite { .. } => {
-                            OrderByParameterInput {
+                            let nested = OrderByParameterInput {
                                 param: parameter,
                                 parent_column_path: new_column_path,
                             }
                             .to_sql(parameter_value, subsystem, request_context)
-                            .await
+                            .await?;
+
+                            Ok(OrderByComputation::new(
+                                nested.order_by,
+                                AbstractPredicate::and(field_access_predicate, nested.predicate),
+                            ))
                         }
                     }
                 }

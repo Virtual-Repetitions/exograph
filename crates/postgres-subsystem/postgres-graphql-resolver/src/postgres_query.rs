@@ -16,7 +16,7 @@ use super::{
 use crate::util::to_pg_vector;
 use crate::{
     operation_resolver::{OperationSelectionResolver, ResolvedSelect},
-    order_by_mapper::OrderByParameterInput,
+    order_by_mapper::{OrderByComputation, OrderByParameterInput},
     sql_mapper::extract_and_map,
 };
 use async_recursion::async_recursion;
@@ -116,16 +116,31 @@ impl OperationSelectionResolver for CollectionQuery {
         .await?;
         let restrict_relations = parent_read_predicate != AbstractPredicate::True;
 
+        let base_predicate = compute_predicate(
+            &[predicate_param],
+            arguments,
+            subsystem,
+            request_context,
+            restrict_relations,
+        )
+        .await?;
+
+        let order_by_result =
+            compute_order_by(order_by_param, arguments, subsystem, request_context).await?;
+
+        let (order_by, order_by_predicate) = match order_by_result {
+            Some(OrderByComputation {
+                order_by,
+                predicate,
+            }) => (Some(order_by), predicate),
+            None => (None, AbstractPredicate::True),
+        };
+
+        let combined_predicate = AbstractPredicate::and(base_predicate, order_by_predicate);
+
         let select = compute_select(
-            compute_predicate(
-                &[predicate_param],
-                arguments,
-                subsystem,
-                request_context,
-                restrict_relations,
-            )
-            .await?,
-            compute_order_by(order_by_param, arguments, subsystem, request_context).await?,
+            combined_predicate,
+            order_by,
             extract_and_map(limit_param, arguments, subsystem, request_context).await?,
             extract_and_map(offset_param, arguments, subsystem, request_context).await?,
             &self.return_type,
@@ -201,7 +216,7 @@ async fn compute_order_by<'content>(
     arguments: &'content Arguments,
     subsystem: &'content PostgresGraphQLSubsystem,
     request_context: &'content RequestContext<'content>,
-) -> Result<Option<AbstractOrderBy>, PostgresExecutionError> {
+) -> Result<Option<OrderByComputation>, PostgresExecutionError> {
     extract_and_map(
         OrderByParameterInput {
             param,
