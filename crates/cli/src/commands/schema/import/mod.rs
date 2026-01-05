@@ -303,7 +303,7 @@ mod tests {
             Err(payload) => {
                 let message = payload
                     .downcast_ref::<String>()
-                    .map(|s| s.clone())
+                    .cloned()
                     .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
                     .unwrap_or_default();
 
