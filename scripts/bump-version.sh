@@ -86,5 +86,8 @@ cargo generate-lockfile >/dev/null
 # Pin timezone_provider to a version compatible with temporal_rs
 cargo update -p timezone_provider --precise 0.0.14 >/dev/null
 
+# Keep jsonwebtoken aligned with required features
+cargo update -p jsonwebtoken --precise 10.2.0 >/dev/null
+
 echo "Updated Cargo.toml and regenerated Cargo.lock."
 echo "Next steps: review changes and run cargo build or tests as needed."
