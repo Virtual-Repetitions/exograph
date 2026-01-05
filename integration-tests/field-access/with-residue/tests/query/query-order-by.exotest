@@ -13,9 +13,14 @@ auth: |
   }
 response: |
   {
-    "errors": [
-      {
-        "message": "Not authorized"
-      }
-    ]
+    "data": {
+      "people": [
+        {
+          "id": $.p1id,
+          "name": "P1",
+          "age": 10,
+          "email": "p1@example.com"
+        }
+      ]
+    }
   }
