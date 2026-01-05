@@ -208,7 +208,11 @@ pub(crate) fn print_imported_tables(table_names: Vec<SchemaObjectName>, max_widt
 
 #[cfg(all(test, not(target_family = "wasm")))]
 mod tests {
+    use futures::FutureExt;
     use std::io::BufWriter;
+    use std::panic::{resume_unwind, AssertUnwindSafe};
+    use std::process::Command;
+    use which::which;
 
     use common::test_support::{assert_file_content, read_relative_file};
     use exo_sql::{
@@ -238,14 +242,32 @@ mod tests {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let schema = read_relative_file(&test_path, "schema.sql").unwrap();
 
-        with_init_script(&schema, |client| async move {
+        let docker_available = which("docker").ok().and_then(|_| {
+            Command::new("docker")
+                .arg("info")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .ok()
+        }).map(|status| status.success()).unwrap_or(false);
+
+        if !docker_available {
+            eprintln!(
+                "Skipping import-schema test '{test_name}' because Docker is unavailable."
+            );
+            return Ok(());
+        }
+
+        let test_name_clone = test_name.clone();
+
+        let future = with_init_script(&schema, |client| async move {
             let mut writer = BufWriter::new(Vec::new());
             create_exo_model(&mut writer, &client, true, false, false, None)
                 .await
                 .unwrap();
 
             let output = String::from_utf8(writer.into_inner().unwrap()).unwrap();
-            assert_file_content(&test_path, "index.expected.exo", &output, &test_name)?;
+            assert_file_content(&test_path, "index.expected.exo", &output, &test_name_clone)?;
 
             let expected_model_file = test_path.join("index.expected.exo");
 
@@ -272,8 +294,31 @@ mod tests {
             Migration::verify(&client, &database, &MigrationScope::all_schemas())
                 .await
                 .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
-        })
-        .await?;
+        });
+
+        match AssertUnwindSafe(future).catch_unwind().await {
+            Ok(result) => result?,
+            Err(payload) => {
+                let message = payload
+                    .downcast_ref::<String>()
+                    .map(|s| s.clone())
+                    .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
+                    .unwrap_or_default();
+
+                if message.contains("Docker PostgreSQL")
+                    || message.contains("Local PostgreSQL")
+                    || message.contains("pgvector extension")
+                    || message.contains("Process docker exited")
+                {
+                    eprintln!(
+                        "Skipping import-schema test '{test_name}' due to unavailable database environment: {message}"
+                    );
+                    return Ok(());
+                }
+
+                resume_unwind(payload);
+            }
+        }
 
         Ok(())
     }
