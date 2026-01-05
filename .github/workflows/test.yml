@@ -29,6 +29,9 @@ jobs:
         with:
           fetch-depth: 0
       - uses: Swatinem/rust-cache@v2
+      - name: Remove stale rusty_v8 checksums
+        shell: bash
+        run: ./scripts/fix-rusty-v8-cache.sh target
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -99,6 +102,9 @@ jobs:
         with:
           key: ${{ matrix.target }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Remove stale rusty_v8 checksums
+        shell: bash
+        run: ./scripts/fix-rusty-v8-cache.sh target
       - name: Build
         run: cargo build --target ${{ matrix.target }} --workspace --exclude postgres-resolver-dynamic --exclude postgres-builder-dynamic --exclude server-cf-worker
       - name: Run tests
