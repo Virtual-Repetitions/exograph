@@ -629,3 +629,170 @@ pub async fn compute_predicate<'a>(
         AbstractPredicate::and(acc, predicate)
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::create_postgres_system_from_str;
+    use async_trait::async_trait;
+    use common::{
+        context::{RequestContext, TestRequestContext},
+        http::{RequestHead, RequestPayload, ResponsePayload},
+        router::{PlainRequestPayload, Router},
+        value::{Val, val::ValNumber},
+    };
+    use exo_env::MapEnvironment;
+    use http::Method;
+    use indexmap::IndexMap;
+    use serde_json::json;
+    use std::collections::HashMap;
+
+    struct DummyRequest;
+
+    impl RequestPayload for DummyRequest {
+        fn get_head(&self) -> &(dyn RequestHead + Send + Sync) {
+            self
+        }
+
+        fn take_body(&self) -> serde_json::Value {
+            serde_json::Value::Null
+        }
+    }
+
+    impl RequestHead for DummyRequest {
+        fn get_headers(&self, _key: &str) -> Vec<String> {
+            vec![]
+        }
+
+        fn get_ip(&self) -> Option<std::net::IpAddr> {
+            None
+        }
+
+        fn get_method(&self) -> Method {
+            Method::POST
+        }
+
+        fn get_path(&self) -> String {
+            String::new()
+        }
+
+        fn get_query(&self) -> serde_json::Value {
+            serde_json::Value::Null
+        }
+    }
+
+    struct DummyRouter;
+
+    #[async_trait]
+    impl<'request> Router<PlainRequestPayload<'request>> for DummyRouter {
+        async fn route(
+            &self,
+            _request_context: &PlainRequestPayload<'request>,
+        ) -> Option<ResponsePayload> {
+            None
+        }
+    }
+
+    #[tokio::test]
+    async fn nested_relation_filter_builds_predicate_without_panic() {
+        let subsystem = create_postgres_system_from_str(
+            r#"
+            context AccessContext {
+                @test("user_id") user_id: Int
+            }
+
+            @postgres
+            module TeamModule {
+                @access(true)
+                type User {
+                    @pk id: Int = autoIncrement()
+                    name: String
+                    @relation("user") teamMemberships: Set<TeamMember>?
+                }
+
+                @access(true)
+                type Team {
+                    @pk id: Int = autoIncrement()
+                    name: String
+                    @relation("team") members: Set<TeamMember>?
+                }
+
+                @access(
+                    query = (self.team.members.some(member => member.user_id == AccessContext.user_id)),
+                    create = true,
+                    update = true,
+                    delete = true
+                )
+                type TeamMember {
+                    @pk id: Int = autoIncrement()
+                    team_uuid: Int
+                    user_id: Int
+                    @manyToOne @column("team_uuid") team: Team
+                    @manyToOne @column("user_id") user: User
+                }
+            }
+            "#,
+            "team.exo".to_string(),
+        )
+        .await
+        .expect("Failed to build subsystem");
+
+        let (user_entity_id, _) = subsystem
+            .core_subsystem
+            .entity_types
+            .iter()
+            .find(|(_, entity)| entity.name.as_str() == "User")
+            .expect("User entity not found");
+
+        let users_collection_query = subsystem.get_collection_query(user_entity_id);
+        let predicate_param = &users_collection_query.parameters.predicate_param;
+
+        let mut user_id_filter = HashMap::new();
+        user_id_filter.insert("eq".to_string(), Val::Number(ValNumber::I32(1)));
+
+        let mut team_members_filter = HashMap::new();
+        team_members_filter.insert("user_id".to_string(), Val::Object(user_id_filter));
+
+        let mut team_filter = HashMap::new();
+        team_filter.insert("members".to_string(), Val::Object(team_members_filter));
+
+        let mut memberships_filter = HashMap::new();
+        memberships_filter.insert("team".to_string(), Val::Object(team_filter));
+
+        let mut where_filter = HashMap::new();
+        where_filter.insert(
+            "teamMemberships".to_string(),
+            Val::Object(memberships_filter),
+        );
+
+        let mut arguments: Arguments = IndexMap::new();
+        arguments.insert(predicate_param.name.clone(), Val::Object(where_filter));
+
+        let env = MapEnvironment::new();
+        let router = DummyRouter;
+        let jwt: Option<common::context::JwtAuthenticator> = None;
+        const REQUEST: DummyRequest = DummyRequest;
+
+        let request_context = RequestContext::new(
+            &REQUEST,
+            vec![Box::new(TestRequestContext {
+                test_values: json!({"user_id": 1}),
+            })],
+            &router,
+            &jwt,
+            &env,
+        );
+
+        let predicate = compute_predicate(
+            &[predicate_param],
+            &arguments,
+            &subsystem,
+            &request_context,
+            true,
+        )
+        .await
+        .expect("Predicate computation failed");
+
+        assert_ne!(predicate, AbstractPredicate::True);
+    }
+}
