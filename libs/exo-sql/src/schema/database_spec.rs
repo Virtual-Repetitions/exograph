@@ -536,12 +536,12 @@ impl DebugPrintTo for DatabaseSpec {
 
 #[cfg(all(test, not(target_family = "wasm")))]
 mod tests {
-    use futures::FutureExt;
-    use std::panic::{resume_unwind, AssertUnwindSafe};
-    use std::process::{Command, Stdio};
     use crate::schema::column_spec::{ColumnAutoincrement, ColumnDefault};
     use crate::testing::test_support::*;
     use crate::{BooleanColumnType, IntBits, IntColumnType, NumericColumnType, StringColumnType};
+    use futures::FutureExt;
+    use std::panic::{AssertUnwindSafe, resume_unwind};
+    use std::process::{Command, Stdio};
     use which::which;
 
     use super::*;
@@ -724,9 +724,7 @@ mod tests {
         expected_database_spec: DatabaseSpec,
     ) {
         if !docker_available() {
-            eprintln!(
-                "Skipping database-spec test '{test_name}' because Docker is unavailable."
-            );
+            eprintln!("Skipping database-spec test '{test_name}' because Docker is unavailable.");
             return;
         }
 

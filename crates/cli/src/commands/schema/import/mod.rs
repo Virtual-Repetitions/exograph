@@ -210,7 +210,7 @@ pub(crate) fn print_imported_tables(table_names: Vec<SchemaObjectName>, max_widt
 mod tests {
     use futures::FutureExt;
     use std::io::BufWriter;
-    use std::panic::{resume_unwind, AssertUnwindSafe};
+    use std::panic::{AssertUnwindSafe, resume_unwind};
     use std::process::Command;
     use which::which;
 
@@ -242,19 +242,21 @@ mod tests {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let schema = read_relative_file(&test_path, "schema.sql").unwrap();
 
-        let docker_available = which("docker").ok().and_then(|_| {
-            Command::new("docker")
-                .arg("info")
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .ok()
-        }).map(|status| status.success()).unwrap_or(false);
+        let docker_available = which("docker")
+            .ok()
+            .and_then(|_| {
+                Command::new("docker")
+                    .arg("info")
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status()
+                    .ok()
+            })
+            .map(|status| status.success())
+            .unwrap_or(false);
 
         if !docker_available {
-            eprintln!(
-                "Skipping import-schema test '{test_name}' because Docker is unavailable."
-            );
+            eprintln!("Skipping import-schema test '{test_name}' because Docker is unavailable.");
             return Ok(());
         }
 
