@@ -33,3 +33,13 @@ Check out the [Exograph examples repository](https://github.com/exograph/example
 # Development
 
 If you would like to build Exograph locally, please see [DEVELOPMENT.md](DEVELOPMENT.md).
+
+## Before Creating a PR
+
+Before submitting a pull request, run the pre-PR validation script to catch issues locally:
+
+```sh
+npm run prepare:pr
+```
+
+This runs all the same checks that GitHub Actions will run, including formatting, linting, and tests. See [PR_CHECKLIST.md](PR_CHECKLIST.md) for details.
