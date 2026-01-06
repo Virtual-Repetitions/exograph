@@ -261,6 +261,20 @@ impl PhysicalColumnPath {
         self.0[0].self_column_ids()[0].table_id
     }
 
+    pub fn last_link(&self) -> &ColumnPathLink {
+        self.0.last().expect("Unexpected empty column path")
+    }
+
+    pub fn without_last(&self) -> Option<PhysicalColumnPath> {
+        if self.0.len() <= 1 {
+            None
+        } else {
+            let mut links = self.0.clone();
+            links.pop();
+            Some(PhysicalColumnPath(links))
+        }
+    }
+
     pub fn push(mut self, link: ColumnPathLink) -> Self {
         // Assert that the the last link in the path points to the same table as the new link's self table
         // This checks for the last two invariants (see above):

@@ -122,3 +122,20 @@ Please see [CLI Reference](https://exograph.dev/docs/cli-reference/environment) 
 # Logging, tracing, and telemetry
 
 The code is instrumented using the [tracing](https://crates.io/crates/tracing) framework and will output log events to the console by default. For more details, including setting logging levels and using OpenTelemetry, see the [Exograph telemetry documentation](https://exograph.dev/docs/production/telemetry).
+
+# Before Submitting a PR
+
+Before creating a pull request, run the pre-PR validation script to catch issues early:
+
+```sh
+npm run prepare:pr
+```
+
+This will run all critical checks locally that mirror the GitHub Actions workflow:
+- Code formatting (`cargo fmt`)
+- Clippy lints
+- Unit tests
+- Integration tests
+- Error reporting tests
+
+For more details about the PR workflow, troubleshooting, and best practices, see [PR_CHECKLIST.md](PR_CHECKLIST.md).

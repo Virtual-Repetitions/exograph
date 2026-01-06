@@ -10,6 +10,11 @@
   "scripts": {
     "commitlint": "commitlint",
     "lint": "cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings --no-deps",
-    "lint:fix": "cargo fmt --all"
+    "lint:fix": "cargo fmt --all",
+    "test:integration:local": "./target/debug/exo test integration-tests",
+    "prepare:pr": "./scripts/prepare-pr.sh",
+    "bump:minor": "./scripts/bump-version.sh minor",
+    "bump:major": "./scripts/bump-version.sh major",
+    "bump:patch": "./scripts/bump-version.sh patch"
   }
 }

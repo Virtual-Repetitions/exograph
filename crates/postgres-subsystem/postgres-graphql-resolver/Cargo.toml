@@ -37,6 +37,7 @@ postgres-builder = { path = "../postgres-builder" }
 core-model-builder = { path = "../../core-subsystem/core-model-builder" }
 http.workspace = true
 wasm-bindgen-test.workspace = true
+typed-generational-arena.workspace = true
 
 [lib]
 crate-type = ["lib"]

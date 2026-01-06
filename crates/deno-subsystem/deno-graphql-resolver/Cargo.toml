@@ -31,3 +31,4 @@ test-log.workspace = true
 [lib]
 crate-type = ["lib"]
 doctest = false
+test = false

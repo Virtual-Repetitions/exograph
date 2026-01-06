@@ -21,6 +21,24 @@ if (!exo_executable) {
   }
 }
 
+if (!path.isAbsolute(exo_executable)) {
+  const candidates = [
+    path.resolve(process.cwd(), exo_executable),
+    path.resolve(__dirname, '..', exo_executable),
+    path.resolve(__dirname, '..', '..', exo_executable),
+  ];
+
+  const resolved = candidates.find(candidate => fs.existsSync(candidate));
+  if (resolved) {
+    exo_executable = resolved;
+  }
+}
+
+if (!fs.existsSync(exo_executable)) {
+  console.error(`Unable to locate Exograph executable at ${exo_executable}. Set EXO_EXECUTABLE or EXECUTABLE_MODE.`);
+  process.exit(1);
+}
+
 function isExographProject(directory: string): boolean {
   const indexExoPath = path.join(directory, 'src', 'index.exo');
   return fs.existsSync(indexExoPath);
@@ -77,8 +95,22 @@ function checkExographProjects(directories: string[]): Array<Failure> {
       cwd: directory, stdio: 'pipe',
     });
 
+    if (result.error) {
+      failedProjects.push(
+        new Failure(
+          directory,
+          `Failed to execute Exograph: ${result.error.message}`,
+          ""
+        )
+      );
+      return;
+    }
+
     if (result.status != 0) {
-      const actualErrors = result.stderr.toString();
+      const stderr = result.stderr ? result.stderr.toString() : "";
+      const stdout = result.stdout ? result.stdout.toString() : "";
+      const actualErrors = stderr || stdout;
+
       fs.writeFileSync(actualErrorPath, actualErrors, 'utf-8');
 
       if (fs.existsSync(expectedErrorFilePath)) {
@@ -134,4 +166,3 @@ if (failed.length == 0) {
   });
   exit(1)
 }
-

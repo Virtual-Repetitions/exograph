@@ -38,7 +38,22 @@ impl DockerPostgresDatabaseServer {
             tracing::error!("docker not found: {}", e);
             return Ok(false);
         }
-        Ok(true)
+        let status = std::process::Command::new("docker")
+            .arg("info")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+
+        match status {
+            Ok(exit_status) if exit_status.success() => Ok(true),
+            Ok(_) => {
+                tracing::error!("docker info failed; Docker daemon is likely not running");
+                Ok(false)
+            }
+            Err(e) => Err(EphemeralDatabaseSetupError::Generic(format!(
+                "Failed to execute docker info: {e}"
+            ))),
+        }
     }
 
     pub fn start()

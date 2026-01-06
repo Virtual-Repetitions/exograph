@@ -7,7 +7,12 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0.
 
-use std::{io::BufRead, path::Path, process::Command};
+use std::{
+    io::BufRead,
+    path::Path,
+    process::Command,
+    sync::{LazyLock, Mutex},
+};
 
 use super::{
     docker::DockerPostgresDatabaseServer, error::EphemeralDatabaseSetupError,
@@ -23,6 +28,16 @@ enum EphemeralDatabaseLaunchPreference {
 
 pub const EXO_SQL_EPHEMERAL_DATABASE_LAUNCH_PREFERENCE: &str =
     "EXO_SQL_EPHEMERAL_DATABASE_LAUNCH_PREFERENCE";
+
+static PGVECTOR_AVAILABILITY: LazyLock<Mutex<Option<bool>>> = LazyLock::new(|| Mutex::new(None));
+
+pub fn set_pgvector_available(value: Option<bool>) {
+    *PGVECTOR_AVAILABILITY.lock().unwrap() = value;
+}
+
+pub fn pgvector_available() -> Option<bool> {
+    *PGVECTOR_AVAILABILITY.lock().unwrap()
+}
 
 /// Launcher for an ephemeral database server using either a local Postgres installation or Docker
 pub struct EphemeralDatabaseLauncher {
@@ -82,23 +97,35 @@ impl EphemeralDatabaseLauncher {
     pub fn create_server(
         &self,
     ) -> Result<Box<dyn EphemeralDatabaseServer + Send + Sync>, EphemeralDatabaseSetupError> {
+        set_pgvector_available(None);
+
         match self.preference {
             EphemeralDatabaseLaunchPreference::PreferLocal => {
-                let local_error = match Self::local_pgvector_available() {
+                let (local_has_pgvector, local_check_message) = match Self::local_pgvector_available()
+                {
                     Ok(true) => match Self::create_local_server() {
-                        Ok(server) => return Ok(server),
+                        Ok(server) => {
+                            set_pgvector_available(Some(true));
+                            return Ok(server);
+                        }
                         Err(e) => {
                             tracing::warn!("Failed to launch local PostgreSQL instance: {}", e);
-                            Some(format!("Failed to launch local PostgreSQL instance: {e}"))
+                            (
+                                true,
+                                Some(format!("Failed to launch local PostgreSQL instance: {e}")),
+                            )
                         }
                     },
                     Ok(false) => {
                         tracing::warn!(
                             "Local PostgreSQL installation does not include the pgvector extension; falling back to Docker"
                         );
-                        Some(
-                            "Local PostgreSQL installation does not include the pgvector extension"
-                                .to_string(),
+                        (
+                            false,
+                            Some(
+                                "Local PostgreSQL installation does not include the pgvector extension"
+                                    .to_string(),
+                            ),
                         )
                     }
                     Err(e) => {
@@ -106,32 +133,62 @@ impl EphemeralDatabaseLauncher {
                             "Failed to verify pgvector support for local PostgreSQL installation: {}",
                             e
                         );
-                        Some(format!("Failed to verify pgvector support: {e}"))
+                        (false, Some(format!("Failed to verify pgvector support: {e}")))
                     }
                 };
 
                 match Self::create_docker_server() {
-                    Ok(server) => Ok(server),
+                    Ok(server) => {
+                        set_pgvector_available(Some(true));
+                        Ok(server)
+                    }
                     Err(docker_error) => {
-                        if let Some(local_error) = local_error {
-                            Err(EphemeralDatabaseSetupError::Generic(format!(
-                                "{local_error}. Additionally, failed to launch Docker PostgreSQL: {docker_error}"
-                            )))
+                        if local_has_pgvector {
+                            if let Some(local_error) = local_check_message {
+                                Err(EphemeralDatabaseSetupError::Generic(format!(
+                                    "{local_error}. Additionally, failed to launch Docker PostgreSQL: {docker_error}"
+                                )))
+                            } else {
+                                Err(docker_error)
+                            }
                         } else {
-                            Err(docker_error)
+                            tracing::warn!("Failed to launch Docker PostgreSQL instance: {}. Attempting to continue with local PostgreSQL without pgvector.", docker_error);
+                            match Self::create_local_server() {
+                                Ok(server) => {
+                                    set_pgvector_available(Some(false));
+                                    tracing::warn!("Proceeding with local PostgreSQL instance that does not include the pgvector extension. Embedding-related tests will be skipped.");
+                                    Ok(server)
+                                }
+                                Err(local_fallback_error) => {
+                                    let mut message = local_check_message.unwrap_or_else(|| {
+                                        "Failed to launch local PostgreSQL instance".to_string()
+                                    });
+                                    message.push_str(&format!(
+                                        ". Additionally, failed to launch Docker PostgreSQL: {docker_error}. Failed to launch local PostgreSQL instance without pgvector: {local_fallback_error}"
+                                    ));
+                                    Err(EphemeralDatabaseSetupError::Generic(message))
+                                }
+                            }
                         }
                     }
                 }
             }
             EphemeralDatabaseLaunchPreference::PreferDocker => match Self::create_docker_server() {
-                Ok(server) => Ok(server),
+                Ok(server) => {
+                    set_pgvector_available(Some(true));
+                    Ok(server)
+                }
                 Err(docker_error) => {
                     tracing::warn!(
                         "Failed to launch Docker PostgreSQL instance: {}. Falling back to local installation.",
                         docker_error
                     );
                     match Self::local_pgvector_available() {
-                        Ok(true) => Self::create_local_server(),
+                        Ok(true) => {
+                            let server = Self::create_local_server()?;
+                            set_pgvector_available(Some(true));
+                            Ok(server)
+                        }
                         Ok(false) => Err(EphemeralDatabaseSetupError::Generic(
                             "Local PostgreSQL installation does not include the pgvector extension. Install the extension or set EXO_SQL_EPHEMERAL_DATABASE_LAUNCH_PREFERENCE=docker-only."
                                 .to_string(),
@@ -144,7 +201,11 @@ impl EphemeralDatabaseLauncher {
             },
             EphemeralDatabaseLaunchPreference::LocalOnly => {
                 match Self::local_pgvector_available() {
-                    Ok(true) => Self::create_local_server(),
+                    Ok(true) => {
+                        let server = Self::create_local_server()?;
+                        set_pgvector_available(Some(true));
+                        Ok(server)
+                    }
                     Ok(false) => Err(EphemeralDatabaseSetupError::Generic(
                         "Local PostgreSQL installation does not include the pgvector extension. Install the extension or set EXO_SQL_EPHEMERAL_DATABASE_LAUNCH_PREFERENCE=docker-only."
                             .to_string(),
@@ -154,7 +215,11 @@ impl EphemeralDatabaseLauncher {
                     ))),
                 }
             }
-            EphemeralDatabaseLaunchPreference::DockerOnly => Self::create_docker_server(),
+            EphemeralDatabaseLaunchPreference::DockerOnly => {
+                let server = Self::create_docker_server()?;
+                set_pgvector_available(Some(true));
+                Ok(server)
+            }
         }
     }
 
