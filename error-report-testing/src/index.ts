@@ -77,8 +77,22 @@ function checkExographProjects(directories: string[]): Array<Failure> {
       cwd: directory, stdio: 'pipe',
     });
 
+    if (result.error) {
+      failedProjects.push(
+        new Failure(
+          directory,
+          `Failed to execute Exograph: ${result.error.message}`,
+          ""
+        )
+      );
+      return;
+    }
+
     if (result.status != 0) {
-      const actualErrors = result.stderr.toString();
+      const stderr = result.stderr ? result.stderr.toString() : "";
+      const stdout = result.stdout ? result.stdout.toString() : "";
+      const actualErrors = stderr || stdout;
+
       fs.writeFileSync(actualErrorPath, actualErrors, 'utf-8');
 
       if (fs.existsSync(expectedErrorFilePath)) {
@@ -134,4 +148,3 @@ if (failed.length == 0) {
   });
   exit(1)
 }
-
