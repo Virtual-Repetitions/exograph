@@ -12,13 +12,14 @@ pub(crate) mod loader;
 mod model;
 
 use std::cmp::min;
+use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use colored::Colorize;
 
-use exo_sql::testing::db::EphemeralDatabaseLauncher;
+use exo_sql::testing::db::{EphemeralDatabaseLauncher, pgvector_available};
 
 use model::TestSuite;
 
@@ -50,9 +51,8 @@ pub fn run(
 
     let start_time = std::time::Instant::now();
 
-    let project_tests = TestSuite::load(root_directory, pattern)
+    let mut project_tests = TestSuite::load(root_directory, pattern)
         .with_context(|| format!("While loading testfiles from directory {root_directory_str}"))?;
-    let number_of_integration_tests = project_tests.len();
 
     // test introspection for all model files
     if run_introspection_tests {
@@ -61,11 +61,38 @@ pub fn run(
 
     println!("{}", "** Running integration tests".blue().bold());
 
+    let db_launcher = EphemeralDatabaseLauncher::from_env();
+    let ephemeral_server = Arc::new(db_launcher.create_server()?);
+
+    let has_pgvector = pgvector_available().unwrap_or(true);
+
+    if !has_pgvector {
+        let is_embedding_suite = |path: &PathBuf| {
+            path.components()
+                .any(|component| component.as_os_str() == OsStr::new("embedding"))
+        };
+        let skipped = project_tests
+            .iter()
+            .filter(|suite| is_embedding_suite(&suite.project_dir))
+            .count();
+        if skipped > 0 {
+            println!(
+                "{}",
+                format!(
+                    "Skipping {skipped} embedding test suite{} because the pgvector extension is not available locally. Install pgvector or enable Docker to run them.",
+                    if skipped == 1 { "" } else { "s" }
+                )
+                .yellow()
+            );
+            project_tests.retain(|suite| !is_embedding_suite(&suite.project_dir));
+        }
+    }
+
+    let number_of_integration_tests = project_tests.len();
+
     let (tasks, read_tasks) = crossbeam_channel::unbounded::<Box<dyn FnOnce() + Send>>();
 
     let (tx, rx) = std::sync::mpsc::channel();
-
-    let ephemeral_server = Arc::new(EphemeralDatabaseLauncher::from_env().create_server()?);
 
     for project_test in project_tests {
         project_test.run(
