@@ -124,10 +124,24 @@ jobs:
         env:
           RUST_BACKTRACE: 1
           EXO_RUN_INTROSPECTION_TESTS: true
-        run: target/${{ matrix.target }}/debug/exo test integration-tests
+        run: |
+          BIN_DIR="${CARGO_TARGET_DIR:-target}"
+          EXO_BIN="${BIN_DIR}/${{ matrix.target }}/debug/exo"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            EXO_BIN="${EXO_BIN}.exe"
+          fi
+          "$EXO_BIN" test integration-tests
         shell: bash
       - name: Error reporting tests
-        run: cd error-report-testing && npm install && EXO_EXECUTABLE=${PWD}/../target/${{matrix.target}}/debug/exo npm run dev
+        run: |
+          BIN_DIR="${CARGO_TARGET_DIR:-target}"
+          EXO_BIN="${BIN_DIR}/${{ matrix.target }}/debug/exo"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            EXO_BIN="${EXO_BIN}.exe"
+          fi
+          cd error-report-testing
+          npm install
+          EXO_EXECUTABLE="${EXO_BIN}" npm run dev
         shell: bash
 
   test-wasm:
