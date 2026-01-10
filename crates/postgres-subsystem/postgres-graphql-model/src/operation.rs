@@ -52,6 +52,8 @@ pub struct PostgresOperation<P: OperationParameters> {
     pub return_type: OperationReturnType<EntityType>,
     /// The doc comments for the operation.
     pub doc_comments: Option<String>,
+    /// Whether this operation should be exposed as a root field in the GraphQL schema.
+    pub exposed_in_schema: bool,
 }
 
 /// Supports introspection of operation parameters

@@ -57,6 +57,7 @@ pub struct ResolvedCompositeType {
     pub name: String,
     pub plural_name: String,
     pub representation: EntityRepresentation,
+    pub root_visible: bool,
 
     pub fields: Vec<ResolvedField>,
     pub table_name: SchemaObjectName,
