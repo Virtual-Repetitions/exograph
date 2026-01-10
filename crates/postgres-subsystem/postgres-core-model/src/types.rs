@@ -82,6 +82,7 @@ pub struct EntityType {
     pub name: String,
     pub plural_name: String,
     pub representation: EntityRepresentation,
+    pub root_visible: bool,
 
     pub fields: Vec<PostgresField<EntityType>>,
     pub agg_fields: Vec<AggregateField>,

@@ -15,6 +15,32 @@ For a given type, Exograph infers:
 
 Exograph sets the default access control rules to disallow anyone executing associated queries and mutations. You can customize this rule using the `@access` annotation, but we will defer to the [Access Control](./access-control.md) section.
 
+### Root visibility
+
+In some scenarios you may want a type to be queryable only through its relations instead of exposing standalone root queries. Exograph lets you do that with the `@visibility` annotation.
+
+```exo
+@postgres
+module LogisticsModule {
+  @access(true)
+  type Shipment {
+    @pk id: Int = autoIncrement()
+    reference: String
+    packages: Set<Package>?
+  }
+
+  @access(true)
+  @visibility(root=false)
+  type Package {
+    @pk id: Int = autoIncrement()
+    label: String
+    shipment: Shipment
+  }
+}
+```
+
+With this configuration GraphQL root fields such as `package`, `packages`, and `packageAgg` are omitted, but the `Package` type remains available when traversing from `Shipment.packages`. This differs from `@access(false)`, which removes access entirely, including nested usage.
+
 ### Table name
 
 By default, Exograph uses the **pluralized and snake_cased** type name as the table name. For example, Exograph will map the `Todo` type to the `todos` table, while it will map `AuthUser` to the `auth_users` table. There is an exception to this rule if a type carries the [`@plural`](#pluralization) annotation, as we'll see next.

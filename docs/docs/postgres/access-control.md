@@ -480,6 +480,8 @@ module ProductDatabase {
 
 Such an arrangement is helpful to avoid unnecessary queries or mutations in the API.
 
+If you need to keep a type accessible through relations while hiding its root queries, combine your access control rules with [`@visibility(root=false)`](./customizing-types.md#root-visibility).
+
 ## Access Control as Invariants
 
 Access control expressions act as invariants, simplifying modeling your domain data access rules. The core idea is to ensure that the input and existing data satisfy the access control expression.

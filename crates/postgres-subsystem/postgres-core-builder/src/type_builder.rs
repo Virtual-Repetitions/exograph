@@ -143,6 +143,7 @@ fn create_shallow_type(
                 name: resolved_type.name(),
                 plural_name: resolved_type.plural_name(),
                 representation: composite.representation,
+                root_visible: composite.root_visible,
                 fields: vec![],
                 agg_fields: vec![],
                 vector_distance_fields: vec![],

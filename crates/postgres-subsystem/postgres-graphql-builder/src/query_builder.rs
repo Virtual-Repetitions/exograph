@@ -166,6 +166,7 @@ fn shallow_unique_query(
                 "unique fields"
             }
         )),
+        exposed_in_schema: return_type.root_visible,
     }
 }
 
@@ -265,6 +266,7 @@ fn shallow_collection_query(
             "Get multiple `{}`s given the provided `where` filter, order by, limit, and offset",
             resolved_entity_type.name
         )),
+        exposed_in_schema: resolved_entity_type.root_visible,
     }
 }
 
@@ -308,6 +310,7 @@ fn shallow_aggregate_query(
             "Get the aggregate value of the selected fields over all `{}`s given the provided `where` filter",
             resolved_entity_type.name
         )),
+        exposed_in_schema: resolved_entity_type.root_visible,
     }
 }
 
@@ -473,5 +476,95 @@ impl crate::shallow::Shallow for OffsetParameterType {
             type_name: String::default(),
             type_id: SerializableSlabIndex::shallow(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core_model::types::FieldType;
+    use core_model_builder::ast::ast_types::default_span;
+    use exo_sql::SchemaObjectName;
+    use postgres_core_builder::{
+        resolved_type::{ResolvedField, ResolvedFieldType},
+        shallow::Shallow,
+    };
+    use postgres_core_model::types::{EntityRepresentation, EntityType};
+
+    fn resolved_type_with_visibility(root_visible: bool) -> ResolvedCompositeType {
+        let pk_field = ResolvedField {
+            name: "id".to_string(),
+            typ: FieldType::Plain(ResolvedFieldType {
+                type_name: "Int".to_string(),
+                is_primitive: true,
+            }),
+            column_names: vec!["id".to_string()],
+            self_column: true,
+            is_pk: true,
+            access: Default::default(),
+            type_hint: None,
+            unique_constraints: vec![],
+            indices: vec![],
+            cardinality: None,
+            default_value: None,
+            update_sync: false,
+            readonly: false,
+            doc_comments: None,
+            computed: None,
+            span: default_span(),
+        };
+
+        ResolvedCompositeType {
+            name: "Thing".to_string(),
+            plural_name: "Things".to_string(),
+            representation: EntityRepresentation::Managed,
+            root_visible,
+            fields: vec![pk_field],
+            table_name: SchemaObjectName::new("thing", Some("public")),
+            access: Default::default(),
+            doc_comments: None,
+            span: default_span(),
+        }
+    }
+
+    #[test]
+    fn root_visibility_controls_query_exposure() {
+        let hidden_type = resolved_type_with_visibility(false);
+        let entity_id = SerializableSlabIndex::<EntityType>::shallow();
+
+        let collection = shallow_collection_query(entity_id, &hidden_type);
+        assert!(
+            !collection.exposed_in_schema,
+            "Expected hidden type collection query to be unexposed"
+        );
+
+        let aggregate = shallow_aggregate_query(entity_id, &hidden_type);
+        assert!(
+            !aggregate.exposed_in_schema,
+            "Expected hidden type aggregate query to be unexposed"
+        );
+
+        let pk_query = shallow_pk_query(entity_id, &hidden_type);
+        assert!(
+            !pk_query.exposed_in_schema,
+            "Expected hidden type pk query to be unexposed"
+        );
+
+        let visible_type = resolved_type_with_visibility(true);
+        let collection_visible = shallow_collection_query(entity_id, &visible_type);
+        assert!(
+            collection_visible.exposed_in_schema,
+            "Expected visible type collection query to remain exposed"
+        );
+        let aggregate_visible = shallow_aggregate_query(entity_id, &visible_type);
+        assert!(
+            aggregate_visible.exposed_in_schema,
+            "Expected visible type aggregate query to remain exposed"
+        );
+        let pk_query_visible = shallow_pk_query(entity_id, &visible_type);
+        assert!(
+            pk_query_visible.exposed_in_schema,
+            "Expected visible type pk query to remain exposed"
+        );
     }
 }

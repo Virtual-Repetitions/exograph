@@ -172,6 +172,56 @@ fn parse_bool_literal(
     }
 }
 
+fn parse_visibility_annotation(
+    ct: &AstModel<Typed>,
+    annotation: Option<&AstAnnotation<Typed>>,
+    errors: &mut Vec<Diagnostic>,
+) -> bool {
+    match annotation {
+        None => true,
+        Some(annotation) => match &annotation.params {
+            AstAnnotationParams::None => {
+                push_type_error(
+                    ct,
+                    annotation.span,
+                    "@visibility requires a boolean value or named parameters".to_string(),
+                    errors,
+                );
+                true
+            }
+            AstAnnotationParams::Single(expr, _) => {
+                parse_bool_literal(ct, "@visibility", expr, annotation.span, errors).unwrap_or(true)
+            }
+            AstAnnotationParams::Map(map, _) => {
+                let mut root_visible = true;
+                for (key, expr) in map {
+                    match key.as_str() {
+                        "root" => {
+                            if let Some(value) =
+                                parse_bool_literal(ct, "root", expr, annotation.span, errors)
+                            {
+                                root_visible = value;
+                            }
+                        }
+                        other => {
+                            push_type_error(
+                                ct,
+                                annotation.span,
+                                format!(
+                                    "Unknown parameter '{}' for @visibility. Supported parameters: root",
+                                    other
+                                ),
+                                errors,
+                            );
+                        }
+                    }
+                }
+                root_visible
+            }
+        },
+    }
+}
+
 fn parse_ownership_annotation(
     ct: &AstModel<Typed>,
     annotation: &AstAnnotation<Typed>,
@@ -578,6 +628,9 @@ fn resolve_composite_type(
             });
         }
 
+        let visibility_annotation = ct.annotations.annotations.get("visibility");
+        let root_visible = parse_visibility_annotation(ct, visibility_annotation, errors);
+
         let ownership_annotation = ct.annotations.annotations.get("ownership");
 
         let ownership_config = ownership_annotation
@@ -644,6 +697,7 @@ fn resolve_composite_type(
                 name,
                 plural_name: plural_name.clone(),
                 representation,
+                root_visible,
                 fields: resolved_fields,
                 table_name: SchemaObjectName {
                     name: table_name,

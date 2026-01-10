@@ -121,6 +121,7 @@ pub trait MutationBuilder {
                     type_name: entity_type.name.clone(),
                 }),
                 doc_comments: Self::single_mutation_doc_comments(entity_type),
+                exposed_in_schema: true,
             })
         };
 
@@ -134,6 +135,7 @@ pub trait MutationBuilder {
                 },
             ))),
             doc_comments: Self::multi_mutation_doc_comments(entity_type),
+            exposed_in_schema: true,
         };
 
         match single_mutation {
