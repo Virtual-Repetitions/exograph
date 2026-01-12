@@ -47,6 +47,7 @@ values:
         name: AuthSchemaTable
         plural_name: AuthSchemaTables
         representation: Managed
+        root_visible: true
         fields:
           - name: id
             typ:
@@ -119,6 +120,7 @@ values:
         name: AuthSchemaTableWithCustomName
         plural_name: AuthSchemaTableWithCustomNames
         representation: Managed
+        root_visible: true
         fields:
           - name: id
             typ:

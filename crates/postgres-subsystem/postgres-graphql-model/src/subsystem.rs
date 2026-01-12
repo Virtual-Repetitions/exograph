@@ -55,29 +55,29 @@ pub struct PostgresGraphQLSubsystem {
 
 impl PostgresGraphQLSubsystem {
     pub fn schema_queries(&self) -> Vec<FieldDefinition> {
-        let pk_queries_defn = self.pk_queries.iter().filter_map(|(_, query)| {
-            query
-                .exposed_in_schema
-                .then(|| query.field_definition(self))
-        });
+        let pk_queries_defn = self
+            .pk_queries
+            .iter()
+            .filter(|(_, query)| query.exposed_in_schema)
+            .map(|(_, query)| query.field_definition(self));
 
-        let collection_queries_defn = self.collection_queries.iter().filter_map(|(_, query)| {
-            query
-                .exposed_in_schema
-                .then(|| query.field_definition(self))
-        });
+        let collection_queries_defn = self
+            .collection_queries
+            .iter()
+            .filter(|(_, query)| query.exposed_in_schema)
+            .map(|(_, query)| query.field_definition(self));
 
-        let aggregate_queries_defn = self.aggregate_queries.iter().filter_map(|(_, query)| {
-            query
-                .exposed_in_schema
-                .then(|| query.field_definition(self))
-        });
+        let aggregate_queries_defn = self
+            .aggregate_queries
+            .iter()
+            .filter(|(_, query)| query.exposed_in_schema)
+            .map(|(_, query)| query.field_definition(self));
 
-        let unique_queries_defn = self.unique_queries.iter().filter_map(|(_, query)| {
-            query
-                .exposed_in_schema
-                .then(|| query.field_definition(self))
-        });
+        let unique_queries_defn = self
+            .unique_queries
+            .iter()
+            .filter(|(_, query)| query.exposed_in_schema)
+            .map(|(_, query)| query.field_definition(self));
 
         pk_queries_defn
             .chain(collection_queries_defn)

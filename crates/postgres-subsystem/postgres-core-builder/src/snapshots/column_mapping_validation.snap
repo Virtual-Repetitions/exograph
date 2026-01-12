@@ -47,6 +47,7 @@ values:
         name: Member
         plural_name: Members
         representation: Managed
+        root_visible: true
         fields:
           - name: memberId
             typ:
@@ -175,6 +176,7 @@ values:
         name: Membership
         plural_name: Memberships
         representation: Managed
+        root_visible: true
         fields:
           - name: membershipId
             typ:

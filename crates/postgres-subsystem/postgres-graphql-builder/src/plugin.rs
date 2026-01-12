@@ -39,17 +39,20 @@ impl PostgresGraphQLSubsystemBuilder {
                 let pk_query_names = subsystem
                     .pk_queries
                     .iter()
-                    .filter_map(|(_, q)| q.exposed_in_schema.then(|| q.name.clone()));
+                    .filter(|(_, q)| q.exposed_in_schema)
+                    .map(|(_, q)| q.name.clone());
 
                 let collection_query_names = subsystem
                     .collection_queries
                     .iter()
-                    .filter_map(|(_, q)| q.exposed_in_schema.then(|| q.name.clone()));
+                    .filter(|(_, q)| q.exposed_in_schema)
+                    .map(|(_, q)| q.name.clone());
 
                 let aggregate_query_names = subsystem
                     .aggregate_queries
                     .iter()
-                    .filter_map(|(_, q)| q.exposed_in_schema.then(|| q.name.clone()));
+                    .filter(|(_, q)| q.exposed_in_schema)
+                    .map(|(_, q)| q.name.clone());
 
                 pk_query_names
                     .chain(collection_query_names)
