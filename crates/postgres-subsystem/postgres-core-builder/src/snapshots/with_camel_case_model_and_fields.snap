@@ -47,6 +47,7 @@ values:
         name: ConcertInfo
         plural_name: ConcertInfos
         representation: Managed
+        root_visible: true
         fields:
           - name: concertId
             typ:

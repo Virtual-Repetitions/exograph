@@ -58,21 +58,25 @@ impl PostgresGraphQLSubsystem {
         let pk_queries_defn = self
             .pk_queries
             .iter()
+            .filter(|(_, query)| query.exposed_in_schema)
             .map(|(_, query)| query.field_definition(self));
 
         let collection_queries_defn = self
             .collection_queries
             .iter()
+            .filter(|(_, query)| query.exposed_in_schema)
             .map(|(_, query)| query.field_definition(self));
 
         let aggregate_queries_defn = self
             .aggregate_queries
             .iter()
-            .map(|query| query.1.field_definition(self));
+            .filter(|(_, query)| query.exposed_in_schema)
+            .map(|(_, query)| query.field_definition(self));
 
         let unique_queries_defn = self
             .unique_queries
             .iter()
+            .filter(|(_, query)| query.exposed_in_schema)
             .map(|(_, query)| query.field_definition(self));
 
         pk_queries_defn

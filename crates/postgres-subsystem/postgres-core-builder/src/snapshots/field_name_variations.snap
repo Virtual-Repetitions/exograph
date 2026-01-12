@@ -47,6 +47,7 @@ values:
         name: Entity
         plural_name: Entities
         representation: Managed
+        root_visible: true
         fields:
           - name: _id
             typ:

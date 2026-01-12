@@ -47,6 +47,7 @@ values:
         name: Concert
         plural_name: Concerts
         representation: Managed
+        root_visible: true
         fields:
           - name: id
             typ:
@@ -246,6 +247,7 @@ values:
         name: Venue
         plural_name: Venuess
         representation: Managed
+        root_visible: true
         fields:
           - name: id
             typ:

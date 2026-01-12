@@ -36,16 +36,22 @@ impl PostgresGraphQLSubsystemBuilder {
             id: "postgres".to_string(),
             serialized_subsystem: SerializableGraphQLBytes(serialized_subsystem),
             query_names: {
-                let pk_query_names = subsystem.pk_queries.iter().map(|(_, q)| q.name.clone());
+                let pk_query_names = subsystem
+                    .pk_queries
+                    .iter()
+                    .filter(|(_, q)| q.exposed_in_schema)
+                    .map(|(_, q)| q.name.clone());
 
                 let collection_query_names = subsystem
                     .collection_queries
                     .iter()
+                    .filter(|(_, q)| q.exposed_in_schema)
                     .map(|(_, q)| q.name.clone());
 
                 let aggregate_query_names = subsystem
                     .aggregate_queries
                     .iter()
+                    .filter(|(_, q)| q.exposed_in_schema)
                     .map(|(_, q)| q.name.clone());
 
                 pk_query_names

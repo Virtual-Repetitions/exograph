@@ -23,7 +23,7 @@ import {
   Storage,
   createLocalStorage,
 } from "@graphiql/toolkit";
-import { GraphQLSchema } from "graphql";
+import { GraphQLSchema, printSchema } from "graphql";
 import { fetchSchema, SchemaError } from "./schema";
 import { explorerPlugin } from "@graphiql/plugin-explorer";
 import { PlaygroundGraphQLProps as GraphiQLProps } from "./types";
@@ -97,6 +97,7 @@ function SchemaFetchingCore(
     null
   );
   const networkErrorCount = useRef(0);
+  const schemaFingerprint = useRef<string | null>(null);
 
   const fetchAndSetSchema = useCallback(async () => {
     const fetchedSchema = await fetchSchema(schemaFetcher);
@@ -109,10 +110,33 @@ function SchemaFetchingCore(
         // let the old schema stay in place
         networkErrorCount.current += 1;
       } else {
+        const resetFingerprintIfNeeded = () => {
+          if (typeof fetchedSchema === "string") {
+            schemaFingerprint.current = null;
+          } else {
+            const newFingerprint = printSchema(fetchedSchema);
+            if (schemaFingerprint.current === newFingerprint) {
+              networkErrorCount.current = 0;
+              return false;
+            }
+            schemaFingerprint.current = newFingerprint;
+          }
+          return true;
+        };
+
+        const shouldUpdateSchema = resetFingerprintIfNeeded();
         // Reset the counter when there is no network error
-        setSchema(fetchedSchema);
+        networkErrorCount.current = 0;
+        if (shouldUpdateSchema) {
+          setSchema(fetchedSchema);
+        }
       }
     } else {
+      if (typeof fetchedSchema === "string") {
+        schemaFingerprint.current = null;
+      } else {
+        schemaFingerprint.current = printSchema(fetchedSchema);
+      }
       setSchema(fetchedSchema);
     }
   }, [schema, setSchema, schemaFetcher, enableSchemaLiveUpdate]);
@@ -124,6 +148,7 @@ function SchemaFetchingCore(
   // Reset the schema when the schemaId changes (another effect will re-fetch the schema)
   useEffect(() => {
     setSchema(null);
+    schemaFingerprint.current = null;
   }, [schemaId]);
 
   // Reset the network error count when the schema is loaded
