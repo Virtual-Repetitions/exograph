@@ -11,6 +11,7 @@ use indexmap::IndexMap;
 
 use common::context::RequestContext;
 use common::value::Val;
+use core_model::types::FieldType;
 use core_resolver::{
     QueryResponse, QueryResponseBody,
     access_solver::{AccessSolver, AccessSolverError},
@@ -255,7 +256,16 @@ pub async fn construct_arg_sequence<'a>(
                 );
                 Ok(Arg::Serde(val.clone()))
             } else {
-                Err(DenoExecutionError::InvalidArgument(arg.name.clone()))
+                match &arg.type_id {
+                    FieldType::Optional(_) => {
+                        trace!(
+                            "[DenoOperation] treating missing optional arg '{}' as null",
+                            arg.name
+                        );
+                        Ok(Arg::Serde(serde_json::Value::Null))
+                    }
+                    _ => Err(DenoExecutionError::InvalidArgument(arg.name.clone())),
+                }
             }
         })
         .collect::<Vec<Result<_, _>>>()

@@ -260,6 +260,18 @@ impl SubsystemBuilder for PostgresSubsystemBuilder {
                     ]),
                 },
             ),
+            (
+                "visibility",
+                AnnotationSpec {
+                    targets: &[AnnotationTarget::Type],
+                    no_params: false,
+                    single_params: true,
+                    mapped_params: Some(&[MappedAnnotationParamSpec {
+                        name: "root",
+                        optional: true,
+                    }]),
+                },
+            ),
         ];
 
         annotations.extend(postgres_core_builder::type_provider::collect_all_hint_annotations());
