@@ -179,11 +179,17 @@ pub fn load_subsystem_builders(
 
                     if builder.is_none() {
                         // Then try to load a dynamic builder
-                        subsystem_builders.push(
-                            core_plugin_interface::interface::load_subsystem_builder(
-                                &entry.path(),
-                            )?,
-                        );
+                        match core_plugin_interface::interface::load_subsystem_builder(
+                            &entry.path(),
+                        ) {
+                            Ok(builder) => subsystem_builders.push(builder),
+                            Err(err) => {
+                                eprintln!(
+                                    "Skipping dynamic subsystem builder {:?} due to error: {err}",
+                                    entry.path()
+                                );
+                            }
+                        }
                     };
                 }
             }
