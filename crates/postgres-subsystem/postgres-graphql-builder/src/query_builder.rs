@@ -512,6 +512,7 @@ mod tests {
             default_value: None,
             update_sync: false,
             readonly: false,
+            relation_path: None,
             doc_comments: None,
             computed: None,
             span: default_span(),

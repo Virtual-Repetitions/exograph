@@ -9,10 +9,10 @@
 
 use crate::{Connect, database_error::DatabaseError};
 
-use super::{
-    creation::{DatabaseCreation, TransactionMode},
-    database_client::DatabaseClient,
-};
+use super::{creation::DatabaseCreation, database_client::DatabaseClient};
+
+#[cfg(feature = "postgres-url")]
+use super::creation::TransactionMode;
 
 #[cfg(feature = "pool")]
 use super::database_pool::DatabasePool;
