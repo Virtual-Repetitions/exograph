@@ -26,8 +26,10 @@ use core_model::{
     },
     types::{FieldType, Named},
 };
-use postgres_core_model::relation::OneToManyRelation;
-use postgres_core_model::relation::PostgresRelation;
+use exo_sql::RelationId;
+use postgres_core_model::relation::{
+    OneToManyRelation, PostgresRelation, RelationCardinality, TransitiveRelationStep,
+};
 
 use postgres_core_model::access::DatabaseAccessPrimitiveExpression;
 
@@ -179,7 +181,7 @@ impl<CT> FieldDefinitionProvider<PostgresGraphQLSubsystem> for PostgresField<CT>
             };
         }
 
-        let arguments = match self.relation {
+        let arguments = match &self.relation {
             PostgresRelation::Scalar { .. }
             | PostgresRelation::ManyToOne { .. }
             | PostgresRelation::Embedded
@@ -189,7 +191,7 @@ impl<CT> FieldDefinitionProvider<PostgresGraphQLSubsystem> for PostgresField<CT>
             PostgresRelation::OneToMany(OneToManyRelation {
                 foreign_entity_id, ..
             }) => {
-                let collection_query = system.get_collection_query(foreign_entity_id);
+                let collection_query = system.get_collection_query(*foreign_entity_id);
 
                 let CollectionQueryParameters {
                     predicate_param,
@@ -208,6 +210,36 @@ impl<CT> FieldDefinitionProvider<PostgresGraphQLSubsystem> for PostgresField<CT>
                 .map(default_positioned)
                 .collect()
             }
+            PostgresRelation::Transitive(transitive) => match transitive.steps.last() {
+                Some(TransitiveRelationStep {
+                    relation_id,
+                    entity_id,
+                    cardinality,
+                    ..
+                }) => match relation_id {
+                    RelationId::OneToMany(_) if *cardinality == RelationCardinality::Unbounded => {
+                        let collection_query = system.get_collection_query(*entity_id);
+                        let CollectionQueryParameters {
+                            predicate_param,
+                            order_by_param,
+                            limit_param,
+                            offset_param,
+                        } = &collection_query.parameters;
+
+                        [
+                            predicate_param.input_value(),
+                            order_by_param.input_value(),
+                            limit_param.input_value(),
+                            offset_param.input_value(),
+                        ]
+                        .into_iter()
+                        .map(default_positioned)
+                        .collect()
+                    }
+                    _ => vec![],
+                },
+                None => vec![],
+            },
         };
 
         let field_type: Type = (&self.typ).into();

@@ -94,6 +94,8 @@ pub struct ResolvedField {
     pub default_value: Option<ResolvedFieldDefault>,
     pub update_sync: bool,
     pub readonly: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relation_path: Option<Vec<String>>,
     pub doc_comments: Option<String>,
     pub computed: Option<ResolvedComputedField>,
     #[serde(skip_serializing)]

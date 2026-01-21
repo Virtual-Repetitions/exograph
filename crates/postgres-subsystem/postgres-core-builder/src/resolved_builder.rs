@@ -758,6 +758,71 @@ fn resolve_composite_type_fields(
             },
         };
 
+        let relation_path = field.annotations.get("relationPath").and_then(|params| {
+            match params {
+                AstAnnotationParams::Single(expr, _) => match expr {
+                    AstExpr::StringLiteral(path, _) => {
+                        let segments: Vec<String> = path
+                            .split('.')
+                            .map(|segment| segment.trim().to_string())
+                            .filter(|segment| !segment.is_empty())
+                            .collect();
+
+                        if segments.is_empty() {
+                            errors.push(Diagnostic {
+                                level: Level::Error,
+                                message: format!(
+                                    "@relationPath for field '{}' must contain at least one segment",
+                                    field.name
+                                ),
+                                code: Some("C000".to_string()),
+                                spans: vec![SpanLabel {
+                                    span: field.span,
+                                    style: SpanStyle::Primary,
+                                    label: None,
+                                }],
+                            });
+                            None
+                        } else {
+                            Some(segments)
+                        }
+                    }
+                    _ => {
+                        errors.push(Diagnostic {
+                            level: Level::Error,
+                            message: format!(
+                                "@relationPath for field '{}' must be a string literal",
+                                field.name
+                            ),
+                            code: Some("C000".to_string()),
+                            spans: vec![SpanLabel {
+                                span: field.span,
+                                style: SpanStyle::Primary,
+                                label: None,
+                            }],
+                        });
+                        None
+                    }
+                },
+                _ => {
+                    errors.push(Diagnostic {
+                        level: Level::Error,
+                        message: format!(
+                            "@relationPath for field '{}' must use the syntax @relationPath(\"segment1.segment2\")",
+                            field.name
+                        ),
+                        code: Some("C000".to_string()),
+                        spans: vec![SpanLabel {
+                            span: field.span,
+                            style: SpanStyle::Primary,
+                            label: None,
+                        }],
+                    });
+                    None
+                }
+            }
+        });
+
         let typ = resolve_field_type(
             &field.typ.to_typ(&typechecked_system.types),
             &typechecked_system.types,
@@ -767,6 +832,23 @@ fn resolve_composite_type_fields(
             .default_value
             .as_ref()
             .map(|v| resolve_field_default_type(v, &typ, errors));
+
+        if relation_path.is_some() && field.annotations.get("computed").is_some() {
+            errors.push(Diagnostic {
+                level: Level::Error,
+                message: format!(
+                    "Field '{}' cannot use both @computed and @relationPath",
+                    field.name
+                ),
+                code: Some("C000".to_string()),
+                spans: vec![SpanLabel {
+                    span: field.span,
+                    style: SpanStyle::Primary,
+                    label: None,
+                }],
+            });
+            continue;
+        }
 
         if let Some(computed_params) = field.annotations.get("computed") {
             let resolved_computed =
@@ -791,6 +873,7 @@ fn resolve_composite_type_fields(
                 default_value: None,
                 update_sync: false,
                 readonly: true,
+                relation_path: None,
                 doc_comments: field.doc_comments.clone(),
                 computed: Some(resolved_computed),
                 span: field.span,
@@ -798,7 +881,21 @@ fn resolve_composite_type_fields(
             continue;
         }
 
-        let column_info = compute_column_info(ct, field, &typechecked_system.types, table_managed);
+        if relation_path.is_some() {
+            readonly = true;
+        }
+
+        let column_info = if relation_path.is_some() {
+            Ok(ColumnInfo {
+                names: vec![],
+                self_column: false,
+                unique_constraints: vec![],
+                indices: vec![],
+                cardinality: None,
+            })
+        } else {
+            compute_column_info(ct, field, &typechecked_system.types, table_managed)
+        };
 
         let ColumnInfo {
             names: column_names,
@@ -860,6 +957,7 @@ fn resolve_composite_type_fields(
             default_value: field_default,
             update_sync,
             readonly,
+            relation_path,
             doc_comments: field.doc_comments.clone(),
             computed: None,
             span: field.span,

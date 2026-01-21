@@ -61,6 +61,16 @@ pub enum Column {
     Function(Function),
 
     Predicate(Box<Predicate<Column>>),
+    /// Extract a JSON field from another column
+    JsonExtract {
+        column: Box<Column>,
+        path: Vec<String>,
+    },
+    /// Extract a JSON field from each element of a JSON array and re-aggregate
+    JsonArrayExtract {
+        column: Box<Column>,
+        key: String,
+    },
 }
 
 #[derive(Debug, PartialEq)]
@@ -159,6 +169,24 @@ impl ExpressionBuilder for Column {
                 builder.push('(');
                 predicate.build(database, builder);
                 builder.push(')');
+            }
+            Column::JsonExtract { column, path } => {
+                builder.push('(');
+                column.build(database, builder);
+                for key in path {
+                    builder.push_str(" -> ");
+                    builder.push('\'');
+                    builder.push_str(key);
+                    builder.push('\'');
+                }
+                builder.push(')');
+            }
+            Column::JsonArrayExtract { column, key } => {
+                builder.push_str("(SELECT COALESCE(json_agg(elem -> '");
+                builder.push_str(key);
+                builder.push_str("'), '[]'::json) FROM json_array_elements(COALESCE(");
+                column.build(database, builder);
+                builder.push_str(", '[]'::json)) AS elem)");
             }
         }
     }

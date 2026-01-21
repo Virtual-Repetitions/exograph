@@ -116,6 +116,20 @@ impl SelectionElement {
                     database,
                 )))
             }
+            SelectionElement::JsonExtract { source, path } => {
+                let column = source.to_sql(selection_level, transformer, database);
+                Column::JsonExtract {
+                    column: Box::new(column),
+                    path,
+                }
+            }
+            SelectionElement::JsonArrayExtract { source, key } => {
+                let column = source.to_sql(selection_level, transformer, database);
+                Column::JsonArrayExtract {
+                    column: Box::new(column),
+                    key,
+                }
+            }
         }
     }
 }

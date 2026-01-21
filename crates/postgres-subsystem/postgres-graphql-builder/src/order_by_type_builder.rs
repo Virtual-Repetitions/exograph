@@ -238,6 +238,7 @@ pub fn new_field_param(
 
     let column_path_link = match &entity_field.relation {
         PostgresRelation::Computed(_) | PostgresRelation::Embedded => return None,
+        PostgresRelation::Transitive(_) => return None,
         relation => Some(relation.column_path_link(database)),
     };
 

@@ -189,6 +189,9 @@ async fn map_single<'a>(
                     PostgresRelation::Computed(_) => {
                         vec![]
                     }
+                    PostgresRelation::Transitive(_) => {
+                        vec![]
+                    }
                 }
             })
         })

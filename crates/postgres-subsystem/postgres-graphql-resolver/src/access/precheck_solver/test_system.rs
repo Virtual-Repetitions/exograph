@@ -236,6 +236,9 @@ impl TestSystem {
             PostgresRelation::Computed(_) => {
                 panic!("Cannot append field to computed relation in test system")
             }
+            PostgresRelation::Transitive(_) => {
+                panic!("Cannot append field to transitive relation in test system")
+            }
         }
     }
 }

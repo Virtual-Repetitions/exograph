@@ -303,3 +303,39 @@ type Venue {
 ```
 
 The `@relation` annotation takes a string argument that specifies the name of the field in the other type that is related to the current field. In this case, the `mainVenue` field in the `Concert` type is related to the `mainConcerts` field in the `Venue` type, while the `altVenue` field is related to the `altConcerts` field.
+
+### Following a relationship path
+
+In some schemas, two types are related only through a chain of intermediate types—for example, through a join table. You can surface such nested relationships directly on a type using the `@relationPath` annotation. The annotation accepts a dot-separated path of existing relation fields that Exograph should traverse to resolve the value.
+
+Consider the following schema where a `Playbook` is connected to `Media` through a join table:
+
+```exo
+type PlaybookMedia {
+  @pk id: Int = autoIncrement()
+  playbook: Playbook
+  media: Media
+}
+
+type Playbook {
+  @pk id: Int = autoIncrement()
+  title: String
+  @relation("playbook") mediaLinks: Set<PlaybookMedia>
+  @relationPath("mediaLinks.media")
+  media: Set<Media>
+}
+
+type Media {
+  @pk id: Int = autoIncrement()
+  url: String
+}
+```
+
+The `media` field on `Playbook` does not have its own columns. Instead, it declares a path (`mediaLinks.media`) that Exograph follows when resolving queries. GraphQL clients can now query `playbook { media { url } }` without having to mention the join type.
+
+Some important details about `@relationPath`:
+
+- The path may contain any combination of `@manyToOne`, one-to-many, or @relation-qualified fields. Each segment must already represent a real relation (computed and other transitive fields are not allowed).
+- Exograph enforces that the field's type matches the path's cardinality. For example, a path that ends in an unbounded relation must be exposed as a `Set<...>`, and optional hops require a nullable field (`?`).
+- Relation-path fields are read-only: they do not appear in mutations because they derive their values from intermediate relations.
+- Collection-style paths (those ending in an unbounded relation) accept the usual collection arguments (`where`, `orderBy`, `limit`, and `offset`) on the GraphQL API, just like regular collection relations.

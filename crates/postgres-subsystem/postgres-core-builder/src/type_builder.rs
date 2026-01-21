@@ -47,14 +47,17 @@ use core_model_builder::{
 };
 
 use exo_sql::{
-    ColumnId, DEFAULT_VECTOR_SIZE, VectorDistanceFunction, get_mto_relation_for_columns,
-    get_otm_relation_for_columns,
+    ColumnId, DEFAULT_VECTOR_SIZE, RelationId, VectorDistanceFunction,
+    get_mto_relation_for_columns, get_otm_relation_for_columns,
 };
 
 use postgres_core_model::{
     access::{Access, DatabaseAccessPrimitiveExpression, UpdateAccessExpression},
     aggregate::{AggregateField, AggregateFieldType},
-    relation::{ManyToOneRelation, OneToManyRelation, PostgresRelation, RelationCardinality},
+    relation::{
+        ManyToOneRelation, OneToManyRelation, PostgresRelation, RelationCardinality,
+        TransitiveRelation, TransitiveRelationStep,
+    },
     types::{
         ComputedScript, EntityType, PostgresField, PostgresFieldType, PostgresPrimitiveType,
         TypeIndex,
@@ -91,6 +94,8 @@ pub(super) fn build_expanded(
             expand_type_fields(c, building, resolved_env, true)?;
         }
     }
+
+    finalize_transitive_relations(building)?;
 
     for (_, resolved_type) in resolved_env.resolved_types.iter() {
         if let ResolvedType::Composite(c) = &resolved_type {
@@ -915,6 +920,10 @@ fn create_relation(
     resolved_env: &ResolvedTypeEnv,
     expand_foreign_relations: bool,
 ) -> Result<PostgresRelation, ModelBuildingError> {
+    if let Some(path) = &field.relation_path {
+        return create_transitive_relation(field, path);
+    }
+
     fn placeholder_relation(is_pk: bool) -> Result<PostgresRelation, ModelBuildingError> {
         // Create an impossible value (will be filled later when expanding relations)
         Ok(PostgresRelation::Scalar {
@@ -1206,4 +1215,200 @@ fn restrictive_access() -> Access {
         },
         delete: SerializableSlabIndex::shallow(),
     }
+}
+
+fn create_transitive_relation(
+    field: &ResolvedField,
+    path: &[String],
+) -> Result<PostgresRelation, ModelBuildingError> {
+    if path.is_empty() {
+        return Err(ModelBuildingError::Generic(format!(
+            "Field '{}' specifies an empty relation path",
+            field.name
+        )));
+    }
+
+    Ok(PostgresRelation::Transitive(TransitiveRelation {
+        path: path.to_vec(),
+        steps: vec![],
+        final_entity_id: SerializableSlabIndex::shallow(),
+    }))
+}
+
+fn compute_transitive_steps(
+    field_name: &str,
+    path: &[String],
+    mut current_entity_id: SerializableSlabIndex<EntityType>,
+    building: &SystemContextBuilding,
+) -> Result<
+    (
+        Vec<TransitiveRelationStep>,
+        SerializableSlabIndex<EntityType>,
+    ),
+    ModelBuildingError,
+> {
+    let mut steps: Vec<TransitiveRelationStep> = Vec::with_capacity(path.len());
+
+    for segment in path {
+        let current_entity = &building.entity_types[current_entity_id];
+        let current_field = current_entity.field_by_name(segment).ok_or_else(|| {
+            ModelBuildingError::Generic(format!(
+                "Field '{}' references unknown segment '{}' on type '{}'",
+                field_name, segment, current_entity.name
+            ))
+        })?;
+
+        let is_optional = matches!(current_field.typ, FieldType::Optional(_));
+
+        match &current_field.relation {
+            PostgresRelation::ManyToOne { relation, .. } => {
+                let next_entity_id = relation.foreign_entity_id;
+                steps.push(TransitiveRelationStep {
+                    field_name: segment.clone(),
+                    relation_id: RelationId::ManyToOne(relation.relation_id),
+                    entity_id: next_entity_id,
+                    cardinality: relation.cardinality.clone(),
+                    is_optional,
+                });
+                current_entity_id = next_entity_id;
+            }
+            PostgresRelation::OneToMany(relation) => {
+                let next_entity_id = relation.foreign_entity_id;
+                steps.push(TransitiveRelationStep {
+                    field_name: segment.clone(),
+                    relation_id: RelationId::OneToMany(relation.relation_id),
+                    entity_id: next_entity_id,
+                    cardinality: relation.cardinality.clone(),
+                    is_optional,
+                });
+                current_entity_id = next_entity_id;
+            }
+            PostgresRelation::Transitive(_) => {
+                return Err(ModelBuildingError::Generic(format!(
+                    "Field '{}' references transitive relation '{}' in its path, which is not supported",
+                    field_name, segment
+                )));
+            }
+            PostgresRelation::Scalar { .. }
+            | PostgresRelation::Computed(_)
+            | PostgresRelation::Embedded => {
+                return Err(ModelBuildingError::Generic(format!(
+                    "Field '{}' references non-relational segment '{}' on type '{}' (relation: {:?})",
+                    field_name, segment, current_entity.name, current_field.relation
+                )));
+            }
+        };
+    }
+
+    Ok((steps, current_entity_id))
+}
+
+fn field_type_is_list(field_type: &FieldType<PostgresFieldType<EntityType>>) -> bool {
+    match field_type {
+        FieldType::List(_) => true,
+        FieldType::Optional(inner) => field_type_is_list(inner),
+        FieldType::Plain(_) => false,
+    }
+}
+
+fn field_type_is_optional(field_type: &FieldType<PostgresFieldType<EntityType>>) -> bool {
+    matches!(field_type, FieldType::Optional(_))
+}
+
+fn finalize_transitive_relations(
+    building: &mut SystemContextBuilding,
+) -> Result<(), ModelBuildingError> {
+    let entity_ids: Vec<_> = building.entity_types.iter().map(|(id, _)| id).collect();
+
+    for entity_id in entity_ids {
+        let field_indices: Vec<_> = {
+            let entity = &building.entity_types[entity_id];
+            entity
+                .fields
+                .iter()
+                .enumerate()
+                .filter(|(_, field)| matches!(field.relation, PostgresRelation::Transitive(_)))
+                .map(|(index, _)| index)
+                .collect()
+        };
+
+        for field_index in field_indices {
+            let (path, field_name, declared_leaf_type, declared_is_list, declared_is_optional) = {
+                let entity = &building.entity_types[entity_id];
+                let field = &entity.fields[field_index];
+
+                if let PostgresRelation::Transitive(transitive) = &field.relation {
+                    (
+                        transitive.path.clone(),
+                        field.name.clone(),
+                        field.typ.innermost().type_name.clone(),
+                        field_type_is_list(&field.typ),
+                        field_type_is_optional(&field.typ),
+                    )
+                } else {
+                    continue;
+                }
+            };
+
+            let (steps, final_entity_id) =
+                compute_transitive_steps(&field_name, &path, entity_id, building)?;
+
+            let expected_entity = &building.entity_types[final_entity_id];
+
+            if expected_entity.name != declared_leaf_type {
+                return Err(ModelBuildingError::Generic(format!(
+                    "Field '{}' resolves @relationPath to type '{}' but field type is '{}'",
+                    field_name, expected_entity.name, declared_leaf_type
+                )));
+            }
+
+            let mut has_unbounded = false;
+            let mut requires_optional = false;
+
+            for step in &steps {
+                if step.is_optional && !has_unbounded {
+                    requires_optional = true;
+                }
+
+                if matches!(
+                    (&step.relation_id, &step.cardinality),
+                    (RelationId::OneToMany(_), RelationCardinality::Unbounded)
+                ) {
+                    has_unbounded = true;
+                }
+            }
+
+            let requires_list = has_unbounded;
+
+            if requires_list && !declared_is_list {
+                return Err(ModelBuildingError::Generic(format!(
+                    "Field '{}' resolves @relationPath to a collection but is declared as a single value",
+                    field_name
+                )));
+            }
+
+            if !requires_list && declared_is_list {
+                return Err(ModelBuildingError::Generic(format!(
+                    "Field '{}' resolves @relationPath to a single value but is declared as a collection",
+                    field_name
+                )));
+            }
+
+            if requires_optional && !declared_is_optional {
+                return Err(ModelBuildingError::Generic(format!(
+                    "Field '{}' resolves @relationPath to an optional value but is declared as non-optional",
+                    field_name
+                )));
+            }
+
+            if let PostgresRelation::Transitive(transitive) =
+                &mut building.entity_types[entity_id].fields[field_index].relation
+            {
+                transitive.steps = steps;
+                transitive.final_entity_id = final_entity_id;
+            }
+        }
+    }
+
+    Ok(())
 }
