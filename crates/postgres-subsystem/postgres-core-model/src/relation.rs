@@ -10,7 +10,7 @@
 use crate::types::{ComputedField, EntityFieldId, EntityType};
 
 use core_model::mapped_arena::SerializableSlabIndex;
-use exo_sql::{ColumnId, ColumnPathLink, Database, ManyToOneId, OneToManyId};
+use exo_sql::{ColumnId, ColumnPathLink, Database, ManyToOneId, OneToManyId, RelationId};
 use serde::{Deserialize, Serialize};
 
 // We model one-to-one (more precisely one-to-one_or_zero and one_or_zero-to-one) relations as
@@ -35,6 +35,7 @@ pub enum PostgresRelation {
     OneToMany(OneToManyRelation),
     Computed(ComputedField),
     Embedded, // Such as a field in typed json
+    Transitive(TransitiveRelation),
 }
 
 impl PostgresRelation {
@@ -45,6 +46,22 @@ impl PostgresRelation {
                 | PostgresRelation::ManyToOne { is_pk: true, .. }
         )
     }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TransitiveRelationStep {
+    pub field_name: String,
+    pub relation_id: RelationId,
+    pub entity_id: SerializableSlabIndex<EntityType>,
+    pub cardinality: RelationCardinality,
+    pub is_optional: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TransitiveRelation {
+    pub path: Vec<String>,
+    pub steps: Vec<TransitiveRelationStep>,
+    pub final_entity_id: SerializableSlabIndex<EntityType>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -98,6 +115,9 @@ impl PostgresRelation {
             }
             PostgresRelation::Embedded => {
                 panic!("Embedded relations cannot be used in queries")
+            }
+            PostgresRelation::Transitive(_) => {
+                panic!("Transitive relations do not have direct column path links")
             }
         }
     }

@@ -57,4 +57,14 @@ pub enum SelectionElement {
     Constant(String),
     /// A subselect such as `... (SELECT * FROM table)`
     SubSelect(RelationId, Box<AbstractSelect>),
+    /// Extract a field from a JSON value
+    JsonExtract {
+        source: Box<SelectionElement>,
+        path: Vec<String>,
+    },
+    /// Extract a field from each element of a JSON array
+    JsonArrayExtract {
+        source: Box<SelectionElement>,
+        key: String,
+    },
 }

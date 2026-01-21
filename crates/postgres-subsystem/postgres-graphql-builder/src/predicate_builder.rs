@@ -236,7 +236,9 @@ fn expand_entity_type(
     ) -> bool {
         if matches!(
             field.relation,
-            PostgresRelation::Computed(_) | PostgresRelation::Embedded
+            PostgresRelation::Computed(_)
+                | PostgresRelation::Embedded
+                | PostgresRelation::Transitive(_)
         ) {
             return false;
         }

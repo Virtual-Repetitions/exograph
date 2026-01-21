@@ -147,6 +147,7 @@ fn compute_update_columns<'a>(
                 panic!("Embedded relations cannot be used in update operations")
             }
             PostgresRelation::Computed(_) => vec![],
+            PostgresRelation::Transitive(_) => vec![],
         })
         .collect()
 }

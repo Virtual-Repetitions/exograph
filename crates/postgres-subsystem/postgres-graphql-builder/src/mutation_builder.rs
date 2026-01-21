@@ -463,7 +463,7 @@ pub trait DataParamBuilder<D> {
                     }),
                 }
             }
-            PostgresRelation::Computed(_) => None,
+            PostgresRelation::Computed(_) | PostgresRelation::Transitive(_) => None,
         }
     }
 

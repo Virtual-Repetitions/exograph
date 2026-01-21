@@ -363,6 +363,9 @@ fn compute_unique_query_predicate_param(
             PostgresRelation::Computed(_) => {
                 panic!("Computed relations cannot be used in unique queries")
             }
+            PostgresRelation::Transitive(_) => {
+                panic!("Transitive relations cannot be used in unique queries")
+            }
         })
         .collect()
 }
