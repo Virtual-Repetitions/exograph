@@ -515,6 +515,8 @@ mod tests {
             relation_path: None,
             doc_comments: None,
             computed: None,
+            join_table_shortcut: None,
+            join_table_intermediate: None,
             span: default_span(),
         };
 
@@ -527,6 +529,7 @@ mod tests {
             table_name: SchemaObjectName::new("thing", Some("public")),
             access: Default::default(),
             doc_comments: None,
+            join_table: None,
             span: default_span(),
         }
     }

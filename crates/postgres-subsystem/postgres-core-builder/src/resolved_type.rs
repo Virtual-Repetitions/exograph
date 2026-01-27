@@ -52,6 +52,47 @@ pub struct ResolvedEnumType {
     pub span: Span,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ResolvedJoinTableConfig {
+    pub shortcuts: Vec<JoinTableShortcutConfig>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct JoinTableShortcutConfig {
+    pub source_entity: String,
+    pub source_foreign_key: String,
+    pub join_reference_key: String,
+    pub expose_as: String,
+    pub join_reference: Option<String>,
+    pub cardinality: JoinTableShortcutCardinality,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JoinTableShortcutCardinality {
+    Many,
+    Optional,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ResolvedJoinTableShortcutField {
+    pub join_table_type: String,
+    pub join_table_source_column: String,
+    pub join_table_target_column: String,
+    pub source_field: String,
+    pub target_entity: String,
+    pub target_field: String,
+    pub is_many: bool,
+    pub join_reference_field_name: Option<String>,
+    pub join_table_target_relation: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ResolvedJoinTableIntermediateField {
+    pub join_table_type: String,
+    pub join_table_source_column: String,
+    pub source_field: String,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ResolvedCompositeType {
     pub name: String,
@@ -63,6 +104,8 @@ pub struct ResolvedCompositeType {
     pub table_name: SchemaObjectName,
     pub access: ResolvedAccess,
     pub doc_comments: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub join_table: Option<ResolvedJoinTableConfig>,
     #[serde(skip_serializing)]
     #[serde(skip_deserializing)]
     #[serde(default = "default_span")]
@@ -94,10 +137,14 @@ pub struct ResolvedField {
     pub default_value: Option<ResolvedFieldDefault>,
     pub update_sync: bool,
     pub readonly: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relation_path: Option<Vec<String>>,
     pub doc_comments: Option<String>,
     pub computed: Option<ResolvedComputedField>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub join_table_shortcut: Option<ResolvedJoinTableShortcutField>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub join_table_intermediate: Option<ResolvedJoinTableIntermediateField>,
     #[serde(skip_serializing)]
     #[serde(skip_deserializing)]
     #[serde(default = "default_span")]

@@ -60,3 +60,17 @@ module MathModule {
   query add(a: Int, b: Int): Int
 }
 ```
+
+Enum fields can be compared using enum literals in the form `EnumName.Variant`:
+
+```exo
+enum AccessLevel {
+  Admin
+  User
+}
+
+module UserModule {
+  @access(AuthContext.level == AccessLevel.Admin)
+  query adminOnlyTask(): String
+}
+```

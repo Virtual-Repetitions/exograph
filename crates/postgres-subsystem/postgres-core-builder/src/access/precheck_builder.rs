@@ -191,6 +191,9 @@ pub fn compute_precheck_predicate_expression(
         AstExpr::NumberLiteral(_, _) => Err(ModelBuildingError::Generic(
             "Top-level expression cannot be a number literal".to_string(),
         )),
+        AstExpr::EnumLiteral(_, _, _, _) => Err(ModelBuildingError::Generic(
+            "Top-level expression cannot be an enum literal".to_string(),
+        )),
         AstExpr::StringList(_, _) => Err(ModelBuildingError::Generic(
             "Top-level expression cannot be a list literal".to_string(),
         )),
@@ -304,6 +307,14 @@ fn compute_primitive_precheck_expr(
         AstExpr::NumberLiteral(value, _) => Ok(PrecheckAccessPrimitiveExpression::Common(
             CommonAccessPrimitiveExpression::NumberLiteral(value.clone()),
         )),
+        AstExpr::EnumLiteral(enum_name, value, _, _) => {
+            Ok(PrecheckAccessPrimitiveExpression::Common(
+                CommonAccessPrimitiveExpression::EnumLiteral {
+                    enum_name: enum_name.clone(),
+                    value: value.clone(),
+                },
+            ))
+        }
         AstExpr::NullLiteral(_) => Ok(PrecheckAccessPrimitiveExpression::Common(
             CommonAccessPrimitiveExpression::NullLiteral,
         )),

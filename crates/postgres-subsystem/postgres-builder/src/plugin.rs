@@ -187,6 +187,18 @@ impl SubsystemBuilder for PostgresSubsystemBuilder {
                 },
             ),
             (
+                "joinTable",
+                AnnotationSpec {
+                    targets: &[AnnotationTarget::Type],
+                    no_params: false,
+                    single_params: false,
+                    mapped_params: Some(&[MappedAnnotationParamSpec {
+                        name: "shortcuts",
+                        optional: false,
+                    }]),
+                },
+            ),
+            (
                 "unique",
                 AnnotationSpec {
                     targets: &[AnnotationTarget::Field],

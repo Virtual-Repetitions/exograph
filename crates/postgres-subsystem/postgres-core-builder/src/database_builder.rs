@@ -354,6 +354,7 @@ fn default_value(field: &ResolvedField) -> Option<ColumnDefault> {
                         }
                     })
                 }
+                AstExpr::EnumLiteral(_, value, _, _) => Some(ColumnDefault::Enum(value.clone())),
                 AstExpr::FieldSelection(selection) => match selection {
                     FieldSelection::Single(element, _) => match element {
                         FieldSelectionElement::Identifier(value, _, _) => {

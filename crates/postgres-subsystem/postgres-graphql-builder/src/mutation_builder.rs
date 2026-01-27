@@ -250,6 +250,9 @@ pub trait DataParamBuilder<D> {
             .fields
             .iter()
             .flat_map(|field| {
+                if field.readonly {
+                    return vec![];
+                }
                 // Create a nested input data type only if it refers to a many side
                 // So for Venue <-> [Concert] case, create only ConcertCreationInputFromVenue
 
@@ -329,6 +332,10 @@ pub trait DataParamBuilder<D> {
         container_type: Option<&str>,
         building: &SystemContextBuilding,
     ) -> Option<PostgresField<MutationType>> {
+        if field.readonly {
+            return None;
+        }
+
         // For typed-json fields, we don't need to make them optional (i.e. force to supply all non-optional fields)
         let is_json_typed = match top_level_type {
             Some(top_level_type) => top_level_type.representation == EntityRepresentation::Json,
@@ -534,6 +541,9 @@ pub trait DataParamBuilder<D> {
         let mut field_types: Vec<_> = vec![];
 
         for field in entity_type.fields.iter() {
+            if field.readonly {
+                continue;
+            }
             let field_type = base_type(
                 &field.typ,
                 building.core_subsystem.primitive_types.values_ref(),

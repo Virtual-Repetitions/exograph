@@ -49,6 +49,7 @@ impl TypecheckFrom<AstFieldDefault<Untyped>> for AstFieldDefault<Typed> {
             AstExpr::BooleanLiteral(_, _)
             | AstExpr::StringLiteral(_, _)
             | AstExpr::NumberLiteral(_, _)
+            | AstExpr::EnumLiteral(_, _, _, _)
             | AstExpr::FieldSelection(_) => expr.pass(type_env, annotation_env, scope, errors),
 
             _ => {

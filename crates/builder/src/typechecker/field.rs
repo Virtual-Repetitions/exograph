@@ -84,7 +84,7 @@ impl TypecheckFrom<AstField<Untyped>> for AstField<Typed> {
                 }
             };
 
-            match *expr {
+            match expr {
                 AstExpr::StringLiteral(_, _) => assert_type(&[
                     "String",
                     "Decimal",
@@ -97,6 +97,22 @@ impl TypecheckFrom<AstField<Untyped>> for AstField<Typed> {
                 ]),
                 AstExpr::BooleanLiteral(_, _) => assert_type(&["Boolean"]),
                 AstExpr::NumberLiteral(_, _) => assert_type(&["Int", "Float"]),
+                AstExpr::EnumLiteral(enum_name, _, _, _) => {
+                    if enum_name != &type_name {
+                        errors.push(Diagnostic {
+                            level: Level::Error,
+                            message:
+                                "Literal specified for default value is not a valid type for field."
+                                    .to_string(),
+                            code: Some("C000".to_string()),
+                            spans: vec![SpanLabel {
+                                span: expr.span(),
+                                style: SpanStyle::Primary,
+                                label: Some(format!("should be of type {type_name}")),
+                            }],
+                        });
+                    }
+                }
                 AstExpr::FieldSelection(_) => {
                     // no type-checking here, since we don't have enough information.
                     // For example `user: User = AuthContext.id` should check that `AuthContext.id`

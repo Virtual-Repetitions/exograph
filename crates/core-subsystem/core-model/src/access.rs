@@ -135,6 +135,7 @@ pub enum CommonAccessPrimitiveExpression {
     StringLiteral(String),              // for example, "ADMIN"
     BooleanLiteral(bool),               // for example, true
     NumberLiteral(String),              // for example, integer (-13, 0, 300, 10.5, etc.)
+    EnumLiteral { enum_name: String, value: String },
     NullLiteral,
 }
 

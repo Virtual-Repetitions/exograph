@@ -19,6 +19,7 @@ impl AstExpr<Typed> {
             AstExpr::FieldSelection(select) => select.typ().clone(),
             AstExpr::LogicalOp(logic) => logic.typ().clone(),
             AstExpr::RelationalOp(relation) => relation.typ().clone(),
+            AstExpr::EnumLiteral(_, _, _, typ) => typ.clone(),
             AstExpr::StringLiteral(_, _) => {
                 Type::Primitive(PrimitiveType::Plain(primitive_type::STRING_TYPE))
             }

@@ -81,6 +81,9 @@ fn matches(expr: &AstExpr<Typed>, operation_name: &str, operation_kind: Operatio
             }
         },
         AstExpr::RelationalOp(_) => panic!("RelationalOp not supported in interceptor expression"),
+        AstExpr::EnumLiteral(_, _, _, _) => {
+            panic!("EnumLiteral not supported in interceptor expression")
+        }
         AstExpr::StringLiteral(value, _) => matches_str(value, operation_name, operation_kind),
         AstExpr::BooleanLiteral(value, _) => *value,
         AstExpr::NumberLiteral(_, _) => {
