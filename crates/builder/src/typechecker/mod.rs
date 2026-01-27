@@ -565,13 +565,13 @@ mod tests {
     #[multiplatform_test]
     fn enum_literal_in_access_predicate() {
         let src = r#"
-        enum TagSharingType {
-            PublicPlaybook
-            PrivatePlaybook
-        }
-
         @postgres
         module TagModule {
+            enum TagSharingType {
+                PublicPlaybook
+                PrivatePlaybook
+            }
+
             type Tag {
                 sharing: TagSharingType
                 @access(query=self.sharing == TagSharingType.PublicPlaybook) title: String
@@ -587,20 +587,16 @@ mod tests {
             .map(|(_, module)| module)
             .unwrap();
         let tag_type = module.0.types.iter().find(|t| t.name == "Tag").unwrap();
-        let title_field = tag_type
-            .fields
-            .iter()
-            .find(|f| f.name == "title")
-            .unwrap();
-        let access = title_field
-            .annotations
-            .annotations
-            .get("access")
-            .unwrap();
+        let title_field = tag_type.fields.iter().find(|f| f.name == "title").unwrap();
+        let access = title_field.annotations.annotations.get("access").unwrap();
 
         let expr = match &access.params {
-            AstAnnotationParams::Single(expr, _) => expr,
-            _ => panic!("Expected single access expression"),
+            AstAnnotationParams::Map(params, _) => params
+                .iter()
+                .find(|(k, _)| k.as_str() == "query")
+                .map(|(_, v)| v)
+                .unwrap(),
+            _ => panic!("Expected map access expression"),
         };
 
         let AstExpr::RelationalOp(rel) = expr else {

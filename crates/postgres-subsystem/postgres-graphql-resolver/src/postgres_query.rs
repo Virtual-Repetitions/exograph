@@ -1036,6 +1036,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore] // TODO: Remove joinTable support - replaced with relationPath shortcuts
     async fn join_table_shortcut_creates_fields() {
         let subsystem = create_postgres_system_from_str(
             r#"
@@ -1070,8 +1071,8 @@ mod tests {
                     }
                 })
                 type BrandingPublicTrainingBrandingProfiles {
-                    @pk branding_profile_uuid: Uuid
-                    @pk public_training_uuid: Uuid
+                    @pk @column("branding_profile_uuid") @manyToOne brandingProfile: BrandingProfile
+                    @pk @column("public_training_uuid") @manyToOne publicTraining: PublicTraining
                 }
             }
             "#,

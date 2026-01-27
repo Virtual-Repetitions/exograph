@@ -56,14 +56,9 @@ impl TypecheckFrom<AstExpr<Untyped>> for AstExpr<Typed> {
         match self {
             AstExpr::FieldSelection(select) => {
                 if let Some((enum_name, value, span)) = enum_literal_parts(select) {
-                    if let Some(typ) = resolve_enum_literal(
-                        &enum_name,
-                        &value,
-                        span,
-                        type_env,
-                        scope,
-                        errors,
-                    ) {
+                    if let Some(typ) =
+                        resolve_enum_literal(&enum_name, &value, span, type_env, scope, errors)
+                    {
                         *self = AstExpr::EnumLiteral(enum_name, value, span, typ);
                         true
                     } else {
@@ -107,7 +102,10 @@ fn enum_literal_parts(
 ) -> Option<(String, String, codemap::Span)> {
     match selection {
         FieldSelection::Select(prefix, elem, span, _) => match (prefix.as_ref(), elem) {
-            (FieldSelection::Single(prefix_elem, _), FieldSelectionElement::Identifier(value, _, _)) => {
+            (
+                FieldSelection::Single(prefix_elem, _),
+                FieldSelectionElement::Identifier(value, _, _),
+            ) => {
                 if let FieldSelectionElement::Identifier(enum_name, _, _) = prefix_elem {
                     Some((enum_name.clone(), value.clone(), *span))
                 } else {
@@ -135,9 +133,7 @@ fn resolve_enum_literal(
     let is_context = type_env
         .get_by_key(enum_name)
         .and_then(|t| match t {
-            Type::Composite(c) if c.kind == crate::ast::ast_types::AstModelKind::Context => {
-                Some(c)
-            }
+            Type::Composite(c) if c.kind == crate::ast::ast_types::AstModelKind::Context => Some(c),
             _ => None,
         })
         .is_some();
@@ -151,6 +147,7 @@ fn resolve_enum_literal(
         _ => None,
     });
 
+    #[allow(clippy::question_mark)]
     let enum_type = match enum_type {
         Some(enum_type) => enum_type,
         None => return None,
@@ -161,9 +158,7 @@ fn resolve_enum_literal(
     } else {
         errors.push(Diagnostic {
             level: Level::Error,
-            message: format!(
-                "Unknown variant '{value}' for enum '{enum_name}'"
-            ),
+            message: format!("Unknown variant '{value}' for enum '{enum_name}'"),
             code: Some("C000".to_string()),
             spans: vec![SpanLabel {
                 span,

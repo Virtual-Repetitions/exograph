@@ -123,12 +123,12 @@ fn compute_primitive_expr(
         AstExpr::NumberLiteral(value, _) => Ok(ModuleAccessPrimitiveExpression::Common(
             CommonAccessPrimitiveExpression::NumberLiteral(value.clone()),
         )),
-        AstExpr::EnumLiteral(enum_name, value, _, _) => Ok(ModuleAccessPrimitiveExpression::Common(
-            CommonAccessPrimitiveExpression::EnumLiteral {
+        AstExpr::EnumLiteral(enum_name, value, _, _) => Ok(
+            ModuleAccessPrimitiveExpression::Common(CommonAccessPrimitiveExpression::EnumLiteral {
                 enum_name: enum_name.clone(),
                 value: value.clone(),
-            },
-        )),
+            }),
+        ),
         AstExpr::NullLiteral(_) => Ok(ModuleAccessPrimitiveExpression::Common(
             CommonAccessPrimitiveExpression::NullLiteral,
         )),

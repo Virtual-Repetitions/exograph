@@ -242,12 +242,14 @@ fn compute_primitive_db_expr(
         AstExpr::NumberLiteral(value, _) => Ok(DatabaseAccessPrimitiveExpression::Common(
             CommonAccessPrimitiveExpression::NumberLiteral(value.clone()),
         )),
-        AstExpr::EnumLiteral(enum_name, value, _, _) => Ok(DatabaseAccessPrimitiveExpression::Common(
-            CommonAccessPrimitiveExpression::EnumLiteral {
-                enum_name: enum_name.clone(),
-                value: value.clone(),
-            },
-        )),
+        AstExpr::EnumLiteral(enum_name, value, _, _) => {
+            Ok(DatabaseAccessPrimitiveExpression::Common(
+                CommonAccessPrimitiveExpression::EnumLiteral {
+                    enum_name: enum_name.clone(),
+                    value: value.clone(),
+                },
+            ))
+        }
         AstExpr::NullLiteral(_) => Ok(DatabaseAccessPrimitiveExpression::Common(
             CommonAccessPrimitiveExpression::NullLiteral,
         )),
