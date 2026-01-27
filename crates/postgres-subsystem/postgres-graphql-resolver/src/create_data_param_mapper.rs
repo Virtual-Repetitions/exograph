@@ -203,7 +203,17 @@ async fn map_single<'a>(
     let row: Result<Vec<InsertionElement>, PostgresExecutionError> =
         join_all(row).await.into_iter().flatten().collect();
 
-    Ok((InsertionRow { elems: row? }, vec![precheck_predicate]))
+    let mut row = row?;
+    let readonly_defaults = map_readonly_defaults(
+        data_type,
+        argument,
+        subsystem,
+        request_context,
+    )
+    .await?;
+    row.extend(readonly_defaults);
+
+    Ok((InsertionRow { elems: row }, vec![precheck_predicate]))
 }
 
 fn enrich_argument_for_access(
@@ -277,9 +287,63 @@ fn enrich_argument_for_access(
     }
 }
 
-async fn map_self_column<'a>(
+async fn map_readonly_defaults<'a>(
+    data_type: &'a MutationType,
+    argument: &'a Val,
+    subsystem: &'a PostgresGraphQLSubsystem,
+    request_context: &'a RequestContext<'a>,
+) -> Result<Vec<InsertionElement>, PostgresExecutionError> {
+    let entity_type = &subsystem.core_subsystem.entity_types[data_type.entity_id];
+
+    let mut defaults = Vec::new();
+
+    for field in entity_type.fields.iter().filter(|field| field.readonly) {
+        let Some(PostgresFieldDefaultValue::Dynamic(selection)) = &field.default_value else {
+            continue;
+        };
+
+        if super::util::get_argument_field(argument, &field.name).is_some() {
+            continue;
+        }
+
+        let field_arg = subsystem
+            .core_subsystem
+            .extract_context_selection(request_context, selection)
+            .await?;
+
+        let Some(field_arg) = field_arg else {
+            continue;
+        };
+
+        match &field.relation {
+            PostgresRelation::Scalar { column_id, .. } => {
+                defaults.push(map_self_column(*column_id, field, field_arg, subsystem).await?);
+            }
+            PostgresRelation::ManyToOne {
+                relation: ManyToOneRelation { relation_id, .. },
+                ..
+            } => {
+                let ManyToOne { column_pairs, .. } =
+                    relation_id.deref(&subsystem.core_subsystem.database);
+
+                let mapped = column_pairs.iter().map(|column_pair| {
+                    map_self_column(column_pair.self_column_id, field, field_arg, subsystem)
+                });
+                defaults.extend(try_join_all(mapped).await?);
+            }
+            PostgresRelation::OneToMany(_)
+            | PostgresRelation::Embedded
+            | PostgresRelation::Computed(_)
+            | PostgresRelation::Transitive(_) => {}
+        }
+    }
+
+    Ok(defaults)
+}
+
+async fn map_self_column<'a, CT>(
     key_column_id: ColumnId,
-    field: &'a PostgresField<MutationType>,
+    field: &'a PostgresField<CT>,
     argument: &'a Val,
     subsystem: &'a PostgresGraphQLSubsystem,
 ) -> Result<InsertionElement, PostgresExecutionError> {
