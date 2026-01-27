@@ -30,8 +30,11 @@ use super::{
 };
 use crate::{
     resolved_type::{
-        ExplicitTypeHint, ResolvedCompositeType, ResolvedComputedField, ResolvedEnumType,
-        ResolvedField, ResolvedFieldDefault, ResolvedFieldType, ResolvedType, SerializableTypeHint,
+        ExplicitTypeHint, JoinTableShortcutCardinality, JoinTableShortcutConfig,
+        ResolvedCompositeType, ResolvedComputedField, ResolvedEnumType, ResolvedField,
+        ResolvedFieldDefault, ResolvedFieldType, ResolvedJoinTableConfig,
+        ResolvedJoinTableIntermediateField, ResolvedJoinTableShortcutField, ResolvedType,
+        SerializableTypeHint,
     },
     type_provider::{PRIMITIVE_TYPE_PROVIDER_REGISTRY, validate_hint_annotations},
 };
@@ -348,6 +351,148 @@ fn parse_ownership_annotation(
     })
 }
 
+fn parse_join_table_annotation(
+    ct: &AstModel<Typed>,
+    annotation: &AstAnnotation<Typed>,
+    errors: &mut Vec<Diagnostic>,
+) -> Option<ResolvedJoinTableConfig> {
+    let params = match &annotation.params {
+        AstAnnotationParams::Map(map, _) => map,
+        _ => {
+            push_type_error(
+                ct,
+                annotation.span,
+                "@joinTable expects named parameters".to_string(),
+                errors,
+            );
+            return None;
+        }
+    };
+
+    let shortcuts_expr = match params.get("shortcuts") {
+        Some(expr) => expr,
+        None => {
+            push_type_error(
+                ct,
+                annotation.span,
+                "@joinTable requires a 'shortcuts' parameter".to_string(),
+                errors,
+            );
+            return None;
+        }
+    };
+
+    let shortcuts_object = match shortcuts_expr {
+        AstExpr::ObjectLiteral(map, _) => map,
+        _ => {
+            push_type_error(
+                ct,
+                shortcuts_expr.span(),
+                "@joinTable 'shortcuts' must be an object literal (e.g. shortcuts={...})"
+                    .to_string(),
+                errors,
+            );
+            return None;
+        }
+    };
+
+    let mut shortcuts = Vec::new();
+
+    for (key, expr) in shortcuts_object {
+        let config_map = match expr {
+            AstExpr::ObjectLiteral(map, _) => map,
+            _ => {
+                push_type_error(
+                    ct,
+                    expr.span(),
+                    format!(
+                        "Shortcut '{}' must be specified using an object literal",
+                        key
+                    ),
+                    errors,
+                );
+                continue;
+            }
+        };
+
+        let mut get_required = |label: &str| -> Option<String> {
+            config_map.get(label).and_then(|expr| {
+                parse_string_literal(ct, label, expr, expr.span(), errors).cloned()
+            })
+        };
+
+        let source_entity = match get_required("sourceEntity") {
+            Some(value) => value,
+            None => continue,
+        };
+        let source_foreign_key = match get_required("sourceForeignKey") {
+            Some(value) => value,
+            None => continue,
+        };
+        let join_reference_key = match get_required("joinReferenceKey") {
+            Some(value) => value,
+            None => continue,
+        };
+
+        let expose_as = if let Some(expr) = config_map.get("exposeAs") {
+            parse_string_literal(ct, "exposeAs", expr, expr.span(), errors)
+                .cloned()
+                .unwrap_or_else(|| key.clone())
+        } else {
+            key.clone()
+        };
+
+        let join_reference = config_map.get("joinReference").and_then(|expr| {
+            parse_string_literal(ct, "joinReference", expr, expr.span(), errors).cloned()
+        });
+
+        let cardinality = config_map.get("cardinality").map_or(
+            JoinTableShortcutCardinality::Many,
+            |expr| {
+                parse_string_literal(ct, "cardinality", expr, expr.span(), errors)
+                    .map(|value| match value.to_lowercase().as_str() {
+                        "many" => JoinTableShortcutCardinality::Many,
+                        "optional" | "one" | "single" => JoinTableShortcutCardinality::Optional,
+                        other => {
+                            push_type_error(
+                                ct,
+                                expr.span(),
+                                format!(
+                                    "Unsupported cardinality '{}' for @joinTable shortcut '{}'. Expected 'many' or 'optional'",
+                                    other, key
+                                ),
+                                errors,
+                            );
+                            JoinTableShortcutCardinality::Many
+                        }
+                    })
+                    .unwrap_or(JoinTableShortcutCardinality::Many)
+            },
+        );
+
+        shortcuts.push(JoinTableShortcutConfig {
+            source_entity,
+            source_foreign_key,
+            join_reference_key,
+            expose_as,
+            join_reference,
+            cardinality,
+        });
+    }
+
+    if shortcuts.is_empty() {
+        push_type_error(
+            ct,
+            annotation.span,
+            "@joinTable requires at least one shortcut definition".to_string(),
+            errors,
+        );
+        return None;
+    }
+
+    Some(ResolvedJoinTableConfig { shortcuts })
+}
+
 fn combine_with_guard(
     existing: Option<AstExpr<Typed>>,
     guard: AstExpr<Typed>,
@@ -562,7 +707,262 @@ fn resolve(
         }
     }
 
+    apply_join_table_shortcuts(&mut resolved_postgres_types, errors);
+
     Ok(resolved_postgres_types)
+}
+
+fn apply_join_table_shortcuts(
+    resolved_types: &mut MappedArena<ResolvedType>,
+    errors: &mut Vec<Diagnostic>,
+) {
+    let mut join_configs: Vec<(String, ResolvedJoinTableConfig)> = Vec::new();
+    for (_, typ) in resolved_types.iter() {
+        if let ResolvedType::Composite(composite) = typ
+            && let Some(config) = &composite.join_table
+        {
+            join_configs.push((composite.name.clone(), config.clone()));
+        }
+    }
+
+    for (join_type_name, config) in join_configs {
+        if config.shortcuts.len() != 2 {
+            errors.push(Diagnostic {
+                level: Level::Error,
+                message: format!(
+                    "@joinTable on '{}' currently supports exactly two shortcuts",
+                    join_type_name
+                ),
+                code: Some("C000".to_string()),
+                spans: vec![],
+            });
+            continue;
+        }
+
+        let shortcuts = config.shortcuts;
+
+        for (index, shortcut) in shortcuts.iter().enumerate() {
+            let target_index = (index + 1) % shortcuts.len();
+            let target = &shortcuts[target_index];
+
+            if shortcut.source_entity == target.source_entity {
+                errors.push(Diagnostic {
+                    level: Level::Error,
+                    message: format!(
+                        "@joinTable shortcut '{}' on '{}' must reference a different sourceEntity than its counterpart",
+                        shortcut.expose_as, join_type_name
+                    ),
+                    code: Some("C000".to_string()),
+                    spans: vec![],
+                });
+                continue;
+            }
+
+            let direct_field_name = shortcut.expose_as.clone();
+
+            let default_join_name = format!("_{}_join", shortcut.expose_as);
+            let join_field_name = shortcut.join_reference.clone().unwrap_or(default_join_name);
+
+            let target_entity_name = target.source_entity.clone();
+
+            let target_relation_name = {
+                let Some(ResolvedType::Composite(join_entity)) =
+                    resolved_types.get_by_key(&join_type_name)
+                else {
+                    errors.push(Diagnostic {
+                        level: Level::Error,
+                        message: format!(
+                            "@joinTable on '{}' references unknown join table type",
+                            join_type_name
+                        ),
+                        code: Some("C000".to_string()),
+                        spans: vec![],
+                    });
+                    continue;
+                };
+
+                join_entity
+                    .fields
+                    .iter()
+                    .find(|field| {
+                        field
+                            .column_names
+                            .iter()
+                            .any(|column| column == &target.join_reference_key)
+                            && match &field.typ {
+                                FieldType::Plain(inner) => inner.type_name == target_entity_name,
+                                FieldType::Optional(inner) => matches!(
+                                    &**inner,
+                                    FieldType::Plain(inner_plain)
+                                        if inner_plain.type_name == target_entity_name
+                                ),
+                                _ => false,
+                            }
+                    })
+                    .map(|field| field.name.clone())
+            };
+
+            let target_relation_name = match target_relation_name {
+                Some(name) => name,
+                None => {
+                    errors.push(Diagnostic {
+                        level: Level::Error,
+                        message: format!(
+                            "@joinTable shortcut '{}' on '{}' could not find a relation to '{}' using column '{}'",
+                            shortcut.expose_as, join_type_name, target_entity_name, target.join_reference_key
+                        ),
+                        code: Some("C000".to_string()),
+                        spans: vec![],
+                    });
+                    continue;
+                }
+            };
+
+            let Some(ResolvedType::Composite(source_type)) =
+                resolved_types.get_by_key_mut(&shortcut.source_entity)
+            else {
+                errors.push(Diagnostic {
+                    level: Level::Error,
+                    message: format!(
+                        "@joinTable shortcut '{}' references unknown sourceEntity '{}'",
+                        shortcut.expose_as, shortcut.source_entity
+                    ),
+                    code: Some("C000".to_string()),
+                    spans: vec![],
+                });
+                continue;
+            };
+
+            if source_type
+                .fields
+                .iter()
+                .any(|field| field.name == direct_field_name)
+            {
+                errors.push(Diagnostic {
+                    level: Level::Error,
+                    message: format!(
+                        "@joinTable shortcut '{}' on '{}' conflicts with an existing field on '{}'",
+                        direct_field_name, join_type_name, shortcut.source_entity
+                    ),
+                    code: Some("C000".to_string()),
+                    spans: vec![],
+                });
+                continue;
+            }
+
+            if source_type
+                .fields
+                .iter()
+                .any(|field| field.name == join_field_name)
+            {
+                errors.push(Diagnostic {
+                    level: Level::Error,
+                    message: format!(
+                        "@joinTable shortcut '{}' would create a join helper field '{}' on '{}' but that field already exists",
+                        shortcut.expose_as, join_field_name, shortcut.source_entity
+                    ),
+                    code: Some("C000".to_string()),
+                    spans: vec![],
+                });
+                continue;
+            }
+
+            let base_field_type = FieldType::Plain(ResolvedFieldType {
+                type_name: target_entity_name.clone(),
+                is_primitive: false,
+            });
+
+            let field_type = match shortcut.cardinality {
+                JoinTableShortcutCardinality::Many => {
+                    FieldType::List(Box::new(base_field_type.clone()))
+                }
+                JoinTableShortcutCardinality::Optional => {
+                    FieldType::Optional(Box::new(base_field_type.clone()))
+                }
+            };
+
+            let is_many = matches!(shortcut.cardinality, JoinTableShortcutCardinality::Many);
+
+            let allow_all_access = ResolvedAccess {
+                default: Some(AstExpr::BooleanLiteral(true, default_span())),
+                ..Default::default()
+            };
+
+            let shortcut_field = ResolvedField {
+                name: direct_field_name,
+                typ: field_type,
+                column_names: vec![],
+                self_column: false,
+                is_pk: false,
+                access: allow_all_access.clone(),
+                type_hint: None,
+                unique_constraints: vec![],
+                indices: vec![],
+                cardinality: None,
+                default_value: None,
+                update_sync: false,
+                readonly: true,
+                relation_path: None,
+                doc_comments: None,
+                computed: None,
+                join_table_shortcut: Some(ResolvedJoinTableShortcutField {
+                    join_table_type: join_type_name.clone(),
+                    join_table_source_column: shortcut.join_reference_key.clone(),
+                    join_table_target_column: target.join_reference_key.clone(),
+                    source_field: shortcut.source_foreign_key.clone(),
+                    target_entity: target_entity_name.clone(),
+                    target_field: target.source_foreign_key.clone(),
+                    is_many,
+                    join_reference_field_name: Some(join_field_name.clone()),
+                    join_table_target_relation: target_relation_name.clone(),
+                }),
+                join_table_intermediate: None,
+                span: default_span(),
+            };
+
+            source_type.fields.push(shortcut_field);
+
+            let join_field_type = if is_many {
+                FieldType::List(Box::new(FieldType::Plain(ResolvedFieldType {
+                    type_name: join_type_name.clone(),
+                    is_primitive: false,
+                })))
+            } else {
+                FieldType::Optional(Box::new(FieldType::Plain(ResolvedFieldType {
+                    type_name: join_type_name.clone(),
+                    is_primitive: false,
+                })))
+            };
+
+            let join_field = ResolvedField {
+                name: join_field_name.clone(),
+                typ: join_field_type,
+                column_names: vec![],
+                self_column: false,
+                is_pk: false,
+                access: allow_all_access,
+                type_hint: None,
+                unique_constraints: vec![],
+                indices: vec![],
+                cardinality: None,
+                default_value: None,
+                update_sync: false,
+                readonly: true,
+                relation_path: None,
+                doc_comments: None,
+                computed: None,
+                join_table_shortcut: None,
+                join_table_intermediate: Some(ResolvedJoinTableIntermediateField {
+                    join_table_type: join_type_name.clone(),
+                    join_table_source_column: shortcut.join_reference_key.clone(),
+                    source_field: shortcut.source_foreign_key.clone(),
+                }),
+                span: default_span(),
+            };
+
+            source_type.fields.push(join_field);
+        }
+    }
 }
 
 fn resolve_composite_type(
@@ -636,6 +1036,10 @@ fn resolve_composite_type(
         let ownership_config = ownership_annotation
             .and_then(|annotation| parse_ownership_annotation(ct, annotation, errors));
 
+        let join_table_annotation = ct.annotations.annotations.get("joinTable");
+        let join_table_config = join_table_annotation
+            .and_then(|annotation| parse_join_table_annotation(ct, annotation, errors));
+
         let mut access = if is_json {
             // As if the user has annotated with `access(true)`
             ResolvedAccess {
@@ -705,6 +1109,7 @@ fn resolve_composite_type(
                 },
                 access: access.clone(),
                 doc_comments: ct.doc_comments.clone(),
+                join_table: join_table_config,
                 span: ct.span,
             }),
         );
@@ -876,6 +1281,8 @@ fn resolve_composite_type_fields(
                 relation_path: None,
                 doc_comments: field.doc_comments.clone(),
                 computed: Some(resolved_computed),
+                join_table_shortcut: None,
+                join_table_intermediate: None,
                 span: field.span,
             });
             continue;
@@ -960,6 +1367,8 @@ fn resolve_composite_type_fields(
             relation_path,
             doc_comments: field.doc_comments.clone(),
             computed: None,
+            join_table_shortcut: None,
+            join_table_intermediate: None,
             span: field.span,
         });
     }

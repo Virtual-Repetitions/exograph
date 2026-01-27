@@ -134,6 +134,21 @@ Now, you can use `AuthContext.role` to refer to the user's role, `IPContext.ip` 
 
 Literals specify a value directly in expressions such as `true`, `false`, `1`, and `"hello"`.
 
+For enum fields, use enum literals in the form `EnumName.Variant` (matching the GraphQL enum
+variant casing). For example:
+
+```exo
+enum Visibility {
+  Public
+  Private
+}
+
+@access(self.visibility == Visibility.Public)
+type Document {
+  visibility: Visibility
+}
+```
+
 ### The `self` object
 
 Sometimes, an access control expression must refer to the accessed object. For example, you may want to allow access to a blog only if the blog is published. In this case, you can use the special `self`. For example, in the example above, you can use `self.published` to refer to the blog's `published` field. This is, of course, valid only while defining access control for the `Blog` type.

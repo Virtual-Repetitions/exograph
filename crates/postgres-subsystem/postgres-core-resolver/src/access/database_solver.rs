@@ -285,6 +285,7 @@ pub fn literal_column(value: Val) -> ColumnPath {
         Val::Bool(v) => ColumnPath::Param(SQLParamContainer::bool(v)),
         Val::Number(v) => ColumnPath::Param(SQLParamContainer::i32(v.as_i64().unwrap() as i32)), // TODO: Deal with the exact number type
         Val::String(v) => ColumnPath::Param(SQLParamContainer::string(v)),
-        Val::List(_) | Val::Object(_) | Val::Binary(_) | Val::Enum(_) => todo!(),
+        Val::Enum(v) => ColumnPath::Param(SQLParamContainer::string(v)),
+        Val::List(_) | Val::Object(_) | Val::Binary(_) => todo!(),
     }
 }

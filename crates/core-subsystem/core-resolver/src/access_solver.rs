@@ -375,6 +375,9 @@ pub async fn reduce_common_primitive_expression<'a>(
                 return Err(AccessSolverError::Generic("Invalid number literal".into()));
             }
         }
+        CommonAccessPrimitiveExpression::EnumLiteral { value, .. } => {
+            Some(Val::Enum(value.clone()))
+        }
         CommonAccessPrimitiveExpression::NullLiteral => Some(Val::Null),
     })
 }

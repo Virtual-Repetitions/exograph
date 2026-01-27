@@ -610,6 +610,7 @@ mod tests {
         http::{RequestHead, RequestPayload, ResponsePayload},
         router::{PlainRequestPayload, Router},
     };
+    use core_model::types::FieldType;
     use exo_env::MapEnvironment;
     use http::Method;
     use indexmap::IndexMap;
@@ -1031,6 +1032,99 @@ mod tests {
             ));
         } else {
             panic!("Expected transitive relation");
+        }
+    }
+
+    #[tokio::test]
+    async fn join_table_shortcut_creates_fields() {
+        let subsystem = create_postgres_system_from_str(
+            r#"
+            @postgres
+            module Branding {
+                @access(true)
+                type BrandingProfile {
+                    @pk uuid: Uuid
+                    name: String?
+                }
+
+                @access(true)
+                type PublicTraining {
+                    @pk uuid: Uuid
+                    title: String?
+                }
+
+                @access(true)
+                @joinTable(shortcuts={
+                    publicTrainings: {
+                        sourceEntity: "BrandingProfile",
+                        sourceForeignKey: "uuid",
+                        joinReferenceKey: "branding_profile_uuid",
+                        exposeAs: "publicTrainings"
+                    },
+                    brandingProfile: {
+                        sourceEntity: "PublicTraining",
+                        sourceForeignKey: "uuid",
+                        joinReferenceKey: "public_training_uuid",
+                        exposeAs: "brandingProfile",
+                        cardinality: "optional"
+                    }
+                })
+                type BrandingPublicTrainingBrandingProfiles {
+                    @pk branding_profile_uuid: Uuid
+                    @pk public_training_uuid: Uuid
+                }
+            }
+            "#,
+            "join-table-shortcut.exo".to_string(),
+        )
+        .await
+        .expect("Failed to build subsystem");
+
+        let (_, branding_entity) = subsystem
+            .core_subsystem
+            .entity_types
+            .iter()
+            .find(|(_, entity)| entity.name == "BrandingProfile")
+            .expect("BrandingProfile entity not found");
+
+        let public_trainings_field = branding_entity
+            .field_by_name("publicTrainings")
+            .expect("Expected shortcut field publicTrainings");
+        assert!(matches!(public_trainings_field.typ, FieldType::List(_)));
+        match &public_trainings_field.relation {
+            PostgresRelation::Transitive(transitive) => {
+                assert_eq!(transitive.steps.len(), 2);
+            }
+            other => panic!("Unexpected relation variant: {:?}", other),
+        }
+
+        let join_field = branding_entity
+            .field_by_name("_publicTrainings_join")
+            .expect("Expected generated join helper field");
+        assert!(matches!(join_field.typ, FieldType::List(_)));
+        match &join_field.relation {
+            PostgresRelation::Transitive(transitive) => {
+                assert_eq!(transitive.steps.len(), 1);
+            }
+            other => panic!("Unexpected relation variant: {:?}", other),
+        }
+
+        let (_, public_training_entity) = subsystem
+            .core_subsystem
+            .entity_types
+            .iter()
+            .find(|(_, entity)| entity.name == "PublicTraining")
+            .expect("PublicTraining entity not found");
+
+        let branding_profile_field = public_training_entity
+            .field_by_name("brandingProfile")
+            .expect("Expected shortcut field brandingProfile");
+        assert!(matches!(branding_profile_field.typ, FieldType::Optional(_)));
+        match &branding_profile_field.relation {
+            PostgresRelation::Transitive(transitive) => {
+                assert_eq!(transitive.steps.len(), 2);
+            }
+            other => panic!("Unexpected relation variant: {:?}", other),
         }
     }
 

@@ -316,6 +316,15 @@ pub enum AstExpr<T: NodeTypedness> {
     FieldSelection(FieldSelection<T>),
     LogicalOp(LogicalOp<T>),
     RelationalOp(RelationalOp<T>),
+    EnumLiteral(
+        String,
+        String,
+        #[serde(skip_serializing)]
+        #[serde(skip_deserializing)]
+        #[serde(default = "default_span")]
+        Span,
+        T::Expr,
+    ),
     StringLiteral(
         String,
         #[serde(skip_serializing)]
@@ -362,6 +371,7 @@ impl<T: NodeTypedness> AstExpr<T> {
     pub fn span(&self) -> Span {
         match &self {
             AstExpr::FieldSelection(s) => *s.span(),
+            AstExpr::EnumLiteral(_, _, s, _) => *s,
             AstExpr::StringLiteral(_, s) => *s,
             AstExpr::LogicalOp(l) => match l {
                 LogicalOp::Not(_, s, _) => *s,

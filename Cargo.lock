@@ -157,7 +157,7 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "smallvec 1.15.1",
- "socket2 0.6.1",
+ "socket2 0.6.2",
  "time",
  "tracing",
  "url",
@@ -367,11 +367,11 @@ dependencies = [
 
 [[package]]
 name = "ar_archive_writer"
-version = "0.2.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0c269894b6fe5e9d7ada0cf69b5bf847ff35bc25fc271f08e1d080fce80339a"
+checksum = "7eb93bbb63b9c227414f6eb3a0adfddca591a8ce1e9b60661bb08969b87e340b"
 dependencies = [
- "object 0.32.2",
+ "object",
 ]
 
 [[package]]
@@ -574,11 +574,11 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "aws-lc-rs"
-version = "1.15.3"
+version = "1.15.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e84ce723ab67259cfeb9877c6a639ee9eb7a27b28123abd71db7f0d5d0cc9d86"
+checksum = "7b7b6141e96a8c160799cc2d5adecd5cbbe5054cb8c7c4af53da0f83bb7ad256"
 dependencies = [
- "aws-lc-sys 0.36.0",
+ "aws-lc-sys 0.37.0",
  "untrusted 0.7.1",
  "zeroize",
 ]
@@ -599,9 +599,9 @@ dependencies = [
 
 [[package]]
 name = "aws-lc-sys"
-version = "0.36.0"
+version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43a442ece363113bd4bd4c8b18977a7798dd4d3c3383f34fb61936960e8f4ad8"
+checksum = "5c34dda4df7017c8db52132f0f8a2e0f8161649d15723ed63fc00c82d0f2081a"
 dependencies = [
  "cc",
  "cmake",
@@ -672,7 +672,7 @@ dependencies = [
  "cfg-if 1.0.4",
  "libc",
  "miniz_oxide",
- "object 0.37.3",
+ "object",
  "rustc-demangle",
  "windows-link",
 ]
@@ -990,7 +990,7 @@ dependencies = [
 
 [[package]]
 name = "builder"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "cc",
  "codemap",
@@ -1251,9 +1251,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.53"
+version = "1.2.54"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "755d2fce177175ffca841e9a06afdb2c4ab0f593d53b4dee48147dfaade85932"
+checksum = "6354c81bbfd62d9cfa9cb3c773c2b7b2a3a482d569de977fd0e961f6e7c00583"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -1365,7 +1365,7 @@ checksum = "c3e64b0cc0439b12df2fa678eae89a1c56a529fd067a9115f7827f1fffd22b32"
 
 [[package]]
 name = "cli"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "anyhow",
  "async-recursion",
@@ -1518,7 +1518,7 @@ checksum = "55b672471b4e9f9e95499ea597ff64941a309b2cdbffcc46f2cc5e2d971fd335"
 
 [[package]]
 name = "common"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "anyhow",
  "async-graphql-value",
@@ -1713,7 +1713,7 @@ dependencies = [
 
 [[package]]
 name = "core-model"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-graphql-parser",
  "async-graphql-value",
@@ -1724,7 +1724,7 @@ dependencies = [
 
 [[package]]
 name = "core-model-builder"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "codemap",
  "codemap-diagnostic",
@@ -1736,7 +1736,7 @@ dependencies = [
 
 [[package]]
 name = "core-plugin-interface"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-trait",
  "built",
@@ -1750,7 +1750,7 @@ dependencies = [
 
 [[package]]
 name = "core-plugin-shared"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "base16ct 0.3.0",
  "bincode 2.0.1",
@@ -1767,7 +1767,7 @@ dependencies = [
 
 [[package]]
 name = "core-resolver"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-graphql-parser",
  "async-graphql-value",
@@ -1799,11 +1799,11 @@ dependencies = [
 
 [[package]]
 name = "core-rest-model"
-version = "0.29.0"
+version = "0.29.2"
 
 [[package]]
 name = "core-router"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "core-plugin-interface",
  "core-plugin-shared",
@@ -2365,7 +2365,7 @@ checksum = "26bf8fc351c5ed29b5c2f0cbbac1b209b74f60ecd62e675a998df72c49af5204"
 
 [[package]]
 name = "deno-builder"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-trait",
  "core-model-builder",
@@ -2376,7 +2376,7 @@ dependencies = [
 
 [[package]]
 name = "deno-graphql-builder"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-trait",
  "codemap",
@@ -2395,7 +2395,7 @@ dependencies = [
 
 [[package]]
 name = "deno-graphql-model"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-graphql-parser",
  "bincode 2.0.1",
@@ -2407,7 +2407,7 @@ dependencies = [
 
 [[package]]
 name = "deno-graphql-resolver"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "anyhow",
  "async-graphql-parser",
@@ -2432,7 +2432,7 @@ dependencies = [
 
 [[package]]
 name = "deno-resolver"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-trait",
  "core-plugin-interface",
@@ -4268,7 +4268,7 @@ checksum = "31ae425815400e5ed474178a7a22e275a9687086a12ca63ec793ff292d8fdae8"
 
 [[package]]
 name = "exo-deno"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-trait",
  "ctor",
@@ -4294,7 +4294,7 @@ dependencies = [
 
 [[package]]
 name = "exo-env"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "dotenvy",
  "thiserror 2.0.18",
@@ -4302,7 +4302,7 @@ dependencies = [
 
 [[package]]
 name = "exo-sql"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "bincode 2.0.1",
  "bytes",
@@ -4344,7 +4344,7 @@ dependencies = [
 
 [[package]]
 name = "exo-wasm"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -4922,7 +4922,7 @@ dependencies = [
 
 [[package]]
 name = "graphql-router"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-graphql-parser",
  "async-stream",
@@ -5381,7 +5381,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.1",
+ "socket2 0.6.2",
  "tokio",
  "tower-service",
  "tracing",
@@ -5774,7 +5774,7 @@ dependencies = [
 
 [[package]]
 name = "introspection-resolver"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-graphql-parser",
  "async-graphql-value",
@@ -5789,7 +5789,7 @@ dependencies = [
 
 [[package]]
 name = "introspection-util"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "anyhow",
  "ctor",
@@ -6235,9 +6235,9 @@ dependencies = [
 
 [[package]]
 name = "libm"
-version = "0.2.15"
+version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
+checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "libredox"
@@ -6326,7 +6326,7 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "lsp"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "anyhow",
  "builder",
@@ -6417,7 +6417,7 @@ checksum = "4facc753ae494aeb6e3c22f839b158aebd4f9270f55cd3c79906c45476c47ab4"
 
 [[package]]
 name = "mcp-bridge"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -6431,7 +6431,7 @@ dependencies = [
 
 [[package]]
 name = "mcp-router"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-graphql-parser",
  "async-stream",
@@ -6592,9 +6592,9 @@ dependencies = [
 
 [[package]]
 name = "moka"
-version = "0.12.12"
+version = "0.12.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3dec6bd31b08944e08b58fd99373893a6c17054d6f3ea5006cc894f4f4eee2a"
+checksum = "b4ac832c50ced444ef6be0767a008b02c106a909ba79d1d830501e94b96f6b7e"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-epoch",
@@ -6847,9 +6847,12 @@ dependencies = [
 
 [[package]]
 name = "notify-types"
-version = "2.0.0"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e0826a989adedc2a244799e823aece04662b66609d96af8dff7ac6df9a8925d"
+checksum = "42b8cfee0e339a0337359f3c88165702ac6e600dc01c0cc9579a92d62b08477a"
+dependencies = [
+ "bitflags 2.10.0",
+]
 
 [[package]]
 name = "ntapi"
@@ -6923,9 +6926,9 @@ dependencies = [
 
 [[package]]
 name = "num-conv"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51d515d32fb182ee37cda2ccdcb92950d6a3c2893aa280e540671c2cd0f3b1d9"
+checksum = "cf97ec579c3c42f953ef76dbf8d55ac91fb219dde70e49aa4a6b7d74e9919050"
 
 [[package]]
 name = "num-integer"
@@ -7001,15 +7004,6 @@ name = "objc2-encode"
 version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef25abbcd74fb2609453eb695bd2f860d389e457f67dc17cafc8b8cbc89d0c33"
-
-[[package]]
-name = "object"
-version = "0.32.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6a622008b6e321afc04970976f62ee297fdbaa6f95318ca343e3eebb9648441"
-dependencies = [
- "memchr",
-]
 
 [[package]]
 name = "object"
@@ -7563,7 +7557,7 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
 name = "playground-router"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-trait",
  "common",
@@ -7645,7 +7639,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-builder"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-trait",
  "builder",
@@ -7666,7 +7660,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-builder-dynamic"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "core-plugin-interface",
  "postgres-builder",
@@ -7674,7 +7668,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-core-builder"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "builder",
  "codemap",
@@ -7703,7 +7697,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-core-model"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "bincode 2.0.1",
  "builder",
@@ -7723,7 +7717,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-core-resolver"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -7747,7 +7741,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-graphql-builder"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "core-model",
  "core-model-builder",
@@ -7761,7 +7755,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-graphql-model"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-graphql-parser",
  "async-graphql-value",
@@ -7776,7 +7770,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-graphql-resolver"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-graphql-parser",
  "async-graphql-value",
@@ -7826,7 +7820,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-resolver"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-trait",
  "common",
@@ -7848,7 +7842,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-resolver-dynamic"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "core-plugin-interface",
  "postgres-resolver",
@@ -7856,7 +7850,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-rest-builder"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "core-model-builder",
  "core-plugin-shared",
@@ -7867,7 +7861,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-rest-model"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "bincode 2.0.1",
  "common",
@@ -7883,7 +7877,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-rest-resolver"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-trait",
  "common",
@@ -7896,7 +7890,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-rpc-builder"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "core-model-builder",
  "core-plugin-shared",
@@ -7907,7 +7901,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-rpc-model"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "bincode 2.0.1",
  "core-model",
@@ -7919,7 +7913,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-rpc-resolver"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-trait",
  "common",
@@ -7978,9 +7972,9 @@ checksum = "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391"
 
 [[package]]
 name = "ppmd-rust"
-version = "1.3.0"
+version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d558c559f0450f16f2a27a1f017ef38468c1090c9ce63c8e51366232d53717b4"
+checksum = "efca4c95a19a79d1c98f791f10aebd5c1363b473244630bb7dbde1dc98455a24"
 
 [[package]]
 name = "ppv-lite86"
@@ -8051,9 +8045,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.105"
+version = "1.0.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "535d180e0ecab6268a3e718bb9fd44db66bbbc256257165fc699dadf70d16fe7"
+checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
 ]
@@ -8089,9 +8083,9 @@ dependencies = [
 
 [[package]]
 name = "psm"
-version = "0.1.28"
+version = "0.1.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d11f2fedc3b7dafdc2851bc52f277377c5473d378859be234bc7ebb593144d01"
+checksum = "1fa96cb91275ed31d6da3e983447320c4eb219ac180fa1679a0889ff32861e2d"
 dependencies = [
  "ar_archive_writer",
  "cc",
@@ -8142,7 +8136,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.1",
  "rustls",
- "socket2 0.6.1",
+ "socket2 0.6.2",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -8181,16 +8175,16 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.1",
+ "socket2 0.6.2",
  "tracing",
  "windows-sys 0.60.2",
 ]
 
 [[package]]
 name = "quote"
-version = "1.0.43"
+version = "1.0.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc74d9a594b72ae6656596548f56f667211f8a97b3d4c3d467150794690dc40a"
+checksum = "21b2ebcf727b7760c461f091f9f0f539b77b8e87f2fd88131e7f1b433b3cece4"
 dependencies = [
  "proc-macro2",
 ]
@@ -8499,7 +8493,7 @@ checksum = "1e061d1b48cb8d38042de4ae0a7a6401009d6143dc80d2e2d6f31f0bdd6470c7"
 
 [[package]]
 name = "rest-router"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-trait",
  "common",
@@ -8569,7 +8563,7 @@ dependencies = [
 
 [[package]]
 name = "rpc-router"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -9187,7 +9181,7 @@ dependencies = [
 
 [[package]]
 name = "server-actix"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "actix-web",
  "common",
@@ -9205,7 +9199,7 @@ dependencies = [
 
 [[package]]
 name = "server-aws-lambda"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "builder",
  "common",
@@ -9226,7 +9220,7 @@ dependencies = [
 
 [[package]]
 name = "server-cf-worker"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "common",
  "console_error_panic_hook",
@@ -9251,7 +9245,7 @@ dependencies = [
 
 [[package]]
 name = "server-common"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "common",
  "core-plugin-interface",
@@ -9487,9 +9481,9 @@ dependencies = [
 
 [[package]]
 name = "socket2"
-version = "0.6.1"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17129e116933cf371d018bb80ae557e889637989d8638274fb25622827b03881"
+checksum = "86f4aa3ad99f2088c990dfa82d367e19cb29268ed67c574d10d0a4bfe71f07e0"
 dependencies = [
  "libc",
  "windows-sys 0.60.2",
@@ -9673,7 +9667,7 @@ dependencies = [
 
 [[package]]
 name = "subsystem-model-builder-util"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-trait",
  "builder",
@@ -9690,7 +9684,7 @@ dependencies = [
 
 [[package]]
 name = "subsystem-model-util"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-graphql-parser",
  "core-model",
@@ -10177,7 +10171,7 @@ dependencies = [
 
 [[package]]
 name = "system-router"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-trait",
  "common",
@@ -10278,7 +10272,7 @@ dependencies = [
 
 [[package]]
 name = "testing"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "anyhow",
  "async-graphql-parser",
@@ -10368,9 +10362,9 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.45"
+version = "0.3.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9e442fc33d7fdb45aa9bfeb312c095964abdf596f7567261062b2a7107aaabd"
+checksum = "9da98b7d9b7dad93488a84b8248efc35352b0b2657397d4167e7ad67e5d535e5"
 dependencies = [
  "deranged",
  "itoa",
@@ -10383,15 +10377,15 @@ dependencies = [
 
 [[package]]
 name = "time-core"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b36ee98fd31ec7426d599183e8fe26932a8dc1fb76ddb6214d05493377d34ca"
+checksum = "7694e1cfe791f8d31026952abf09c69ca6f6fa4e1a1229e18988f06a04a12dca"
 
 [[package]]
 name = "time-macros"
-version = "0.2.25"
+version = "0.2.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71e552d1249bf61ac2a52db88179fd0673def1e1ad8243a00d9ec9ed71fee3dd"
+checksum = "78cc610bac2dcee56805c99642447d4c5dbde4d01f752ffea0199aee1f601dc4"
 dependencies = [
  "num-conv",
  "time-core",
@@ -10467,7 +10461,7 @@ dependencies = [
  "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
- "socket2 0.6.1",
+ "socket2 0.6.2",
  "tokio-macros",
  "windows-sys 0.61.2",
 ]
@@ -10525,7 +10519,7 @@ dependencies = [
  "postgres-protocol",
  "postgres-types",
  "rand 0.9.2",
- "socket2 0.6.1",
+ "socket2 0.6.2",
  "tokio",
  "tokio-util",
  "whoami 2.0.2",
@@ -11214,9 +11208,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
-version = "1.19.0"
+version = "1.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2e054861b4bd027cd373e18e8d8d8e6548085000e41290d95ce0c373a654b4a"
+checksum = "ee48d38b119b0cd71fe4141b30f5ba9c7c5d9f4e7a3a8b4a674e4b6ef789976f"
 dependencies = [
  "getrandom 0.3.4",
  "js-sys",
@@ -11492,7 +11486,7 @@ checksum = "a8145dd1593bf0fb137dbfa85b8be79ec560a447298955877804640e40c2d6ea"
 
 [[package]]
 name = "wasm-builder"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-trait",
  "core-model-builder",
@@ -11503,7 +11497,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-builder-dynamic"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "core-plugin-interface",
  "wasm-builder",
@@ -11552,7 +11546,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-graphql-builder"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-trait",
  "core-model",
@@ -11565,7 +11559,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-graphql-model"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-graphql-parser",
  "bincode 2.0.1",
@@ -11577,7 +11571,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-graphql-resolver"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-graphql-parser",
  "async-trait",
@@ -11593,7 +11587,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-resolver"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "async-trait",
  "core-plugin-interface",
@@ -11607,7 +11601,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-resolver-dynamic"
-version = "0.29.0"
+version = "0.29.2"
 dependencies = [
  "core-plugin-interface",
  "wasm-resolver",
@@ -11695,7 +11689,7 @@ dependencies = [
  "log",
  "mach2",
  "memfd",
- "object 0.37.3",
+ "object",
  "once_cell",
  "postcard",
  "pulley-interpreter",
@@ -11741,7 +11735,7 @@ dependencies = [
  "gimli 0.32.3",
  "indexmap 2.13.0",
  "log",
- "object 0.37.3",
+ "object",
  "postcard",
  "rustc-demangle",
  "semver 1.0.27",
@@ -11812,7 +11806,7 @@ dependencies = [
  "gimli 0.32.3",
  "itertools 0.14.0",
  "log",
- "object 0.37.3",
+ "object",
  "pulley-interpreter",
  "smallvec 1.15.1",
  "target-lexicon",
@@ -11846,7 +11840,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2add04119fa43ce6e57f2638ab978a17adafbba738a2aa66f29c5bb528bd030b"
 dependencies = [
  "cc",
- "object 0.37.3",
+ "object",
  "rustix 1.1.3",
  "wasmtime-internal-versioned-export-macros",
 ]
@@ -11888,7 +11882,7 @@ dependencies = [
  "cfg-if 1.0.4",
  "cranelift-codegen 0.126.2",
  "log",
- "object 0.37.3",
+ "object",
 ]
 
 [[package]]
@@ -11912,7 +11906,7 @@ dependencies = [
  "cranelift-codegen 0.126.2",
  "gimli 0.32.3",
  "log",
- "object 0.37.3",
+ "object",
  "target-lexicon",
  "wasmparser 0.240.0",
  "wasmtime-environ",
@@ -12900,18 +12894,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.33"
+version = "0.8.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "668f5168d10b9ee831de31933dc111a459c97ec93225beb307aed970d1372dfd"
+checksum = "71ddd76bcebeed25db614f82bf31a9f4222d3fbba300e6fb6c00afa26cbd4d9d"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.33"
+version = "0.8.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c7962b26b0a8685668b671ee4b54d007a67d4eaf05fda79ac0ecf41e32270f1"
+checksum = "d8187381b52e32220d50b255276aa16a084ec0a9017a0ca2152a1f55c539758d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -13028,9 +13022,9 @@ checksum = "40990edd51aae2c2b6907af74ffb635029d5788228222c4bb811e9351c0caad3"
 
 [[package]]
 name = "zmij"
-version = "1.0.16"
+version = "1.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dfcd145825aace48cff44a8844de64bf75feec3080e0aa5cdbde72961ae51a65"
+checksum = "02aae0f83f69aafc94776e879363e9771d7ecbffe2c7fbb6c14c5e00dfe88439"
 
 [[package]]
 name = "zopfli"

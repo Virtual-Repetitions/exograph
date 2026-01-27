@@ -339,3 +339,67 @@ Some important details about `@relationPath`:
 - Exograph enforces that the field's type matches the path's cardinality. For example, a path that ends in an unbounded relation must be exposed as a `Set<...>`, and optional hops require a nullable field (`?`).
 - Relation-path fields are read-only: they do not appear in mutations because they derive their values from intermediate relations.
 - Collection-style paths (those ending in an unbounded relation) accept the usual collection arguments (`where`, `orderBy`, `limit`, and `offset`) on the GraphQL API, just like regular collection relations.
+
+### Declaring join tables
+
+When you own the join table itself, you can avoid writing long `@relationPath` chains by annotating the join type with `@joinTable`. The annotation accepts a `shortcuts` map that declares how each side of the join should be exposed.
+
+```exo
+@joinTable(shortcuts={
+  publicTrainings: {
+    sourceEntity: "BrandingProfile",
+    sourceForeignKey: "uuid",
+    joinReferenceKey: "branding_profile_uuid",
+    exposeAs: "publicTrainings"
+  },
+  brandingProfile: {
+    sourceEntity: "PublicTraining",
+    sourceForeignKey: "uuid",
+    joinReferenceKey: "public_training_uuid",
+    exposeAs: "brandingProfile",
+    cardinality: "optional"
+  }
+})
+type PublicTrainingBrandingProfiles {
+  @pk branding_profile_uuid: Uuid
+  @pk public_training_uuid: Uuid
+}
+```
+
+Each shortcut entry describes one direction of the join:
+
+- `sourceEntity` is the entity that should receive the generated fields.
+- `sourceForeignKey` is the column on the source entity that links into the join table (usually a primary key).
+- `joinReferenceKey` is the column in the join table that points back to the source entity.
+- `exposeAs` gives the public field name that appears on the source entity.
+- `joinReference` (optional) overrides the automatically generated helper field (default `_exposeAs_join`).
+- `cardinality` defaults to `many`; use `optional` when the join should expose a single item.
+
+For every shortcut, Exograph adds two read-only fields to the source entity:
+
+1. A direct relation field (for example, `publicTrainings`) that points straight to the target entity.
+2. A helper collection field (for example, `_publicTrainings_join`) that continues to expose the underlying join rows for applications that still need the intermediate data.
+
+> **Note:** If your join table stores additional metadata, keep that logic on the generated helper field or expose the join table directly. The shortcut fields are designed to surface only the related entities.
+
+When authoring schemas with the VReps DSL, you can generate the same `@joinTable` annotation by declaring joins directly on the table definition:
+
+```ts
+joins: [
+  {
+    brandingProfile: join("BrandingProfile", {
+      fk: "branding_profile_uuid",
+      ref: "uuid",
+      exposeAs: "publicTrainings",
+    }),
+    publicTraining: join("PublicTraining", {
+      fk: "public_training_uuid",
+      ref: "uuid",
+      exposeAs: "brandingProfile",
+      cardinality: "optional",
+    }),
+  },
+],
+```
+
+The compiler synthesizes the required `@joinTable` shortcuts and the supporting `@manyToOne` relations on the join table automatically, so you only describe the bridge once.

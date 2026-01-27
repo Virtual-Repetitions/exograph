@@ -17,7 +17,8 @@ use crate::{access_builder::ResolvedAccess, computed_script::bundle_computed_scr
 use crate::{
     resolved_type::{
         ResolvedCompositeType, ResolvedComputedField, ResolvedField, ResolvedFieldDefault,
-        ResolvedFieldType, ResolvedFieldTypeHelper, ResolvedType, ResolvedTypeEnv,
+        ResolvedFieldType, ResolvedFieldTypeHelper, ResolvedJoinTableIntermediateField,
+        ResolvedJoinTableShortcutField, ResolvedType, ResolvedTypeEnv,
     },
     type_provider::VectorTypeHint,
 };
@@ -771,6 +772,9 @@ fn create_persistent_field(
                         parsed_number,
                     )))
                 }
+                AstExpr::EnumLiteral(_, value, _, _) => Ok(PostgresFieldDefaultValue::Static(
+                    Val::Enum(value.to_string()),
+                )),
                 AstExpr::FieldSelection(_) => {
                     // Set some value. Will be overridden by expand_dynamic_default_values later
                     Ok(PostgresFieldDefaultValue::Static(Val::Bool(false)))
@@ -920,6 +924,14 @@ fn create_relation(
     resolved_env: &ResolvedTypeEnv,
     expand_foreign_relations: bool,
 ) -> Result<PostgresRelation, ModelBuildingError> {
+    if let Some(shortcut) = &field.join_table_shortcut {
+        return create_join_table_relation(field, type_id, shortcut, building);
+    }
+
+    if let Some(intermediate) = &field.join_table_intermediate {
+        return create_join_table_intermediate_relation(field, type_id, intermediate, building);
+    }
+
     if let Some(path) = &field.relation_path {
         return create_transitive_relation(field, path);
     }
@@ -1235,6 +1247,157 @@ fn create_transitive_relation(
     }))
 }
 
+fn create_join_table_relation(
+    field: &ResolvedField,
+    type_id: SerializableSlabIndex<EntityType>,
+    shortcut: &ResolvedJoinTableShortcutField,
+    building: &SystemContextBuilding,
+) -> Result<PostgresRelation, ModelBuildingError> {
+    let join_entity_id = building
+        .get_entity_type_id(&shortcut.join_table_type)
+        .ok_or_else(|| {
+            ModelBuildingError::Generic(format!(
+                "Unknown join table type '{}' referenced from field '{}'",
+                shortcut.join_table_type, field.name
+            ))
+        })?;
+    let target_entity_id = building
+        .get_entity_type_id(&shortcut.target_entity)
+        .ok_or_else(|| {
+            ModelBuildingError::Generic(format!(
+                "Unknown target entity '{}' referenced from field '{}'",
+                shortcut.target_entity, field.name
+            ))
+        })?;
+
+    let source_entity = &building.entity_types[type_id];
+    let target_entity = &building.entity_types[target_entity_id];
+    let join_entity = &building.entity_types[join_entity_id];
+
+    let join_table_id = join_entity.table_id;
+    let source_table_id = source_entity.table_id;
+    let target_table_id = target_entity.table_id;
+
+    let join_source_column_ids = building.database.get_column_ids_from_names(
+        join_table_id,
+        std::slice::from_ref(&shortcut.join_table_source_column),
+    );
+    let join_target_column_ids = building.database.get_column_ids_from_names(
+        join_table_id,
+        std::slice::from_ref(&shortcut.join_table_target_column),
+    );
+
+    let otm_relation_id = get_otm_relation_for_columns(
+        &join_source_column_ids,
+        &building.database,
+        Some(source_table_id),
+    )
+    .ok_or_else(|| {
+        ModelBuildingError::Generic(format!(
+            "Unable to determine relation from '{}' to join table '{}' for field '{}'",
+            source_entity.name, shortcut.join_table_type, field.name
+        ))
+    })?;
+
+    let mto_relation_id = get_mto_relation_for_columns(
+        &join_target_column_ids,
+        &building.database,
+        Some(target_table_id),
+    )
+    .ok_or_else(|| {
+        ModelBuildingError::Generic(format!(
+            "Unable to determine relation from join table '{}' to target '{}' for field '{}'",
+            shortcut.join_table_type, shortcut.target_entity, field.name
+        ))
+    })?;
+
+    let helper_field_name = shortcut
+        .join_reference_field_name
+        .clone()
+        .unwrap_or_else(|| format!("_{}_join", field.name));
+
+    let join_cardinality = if shortcut.is_many {
+        RelationCardinality::Unbounded
+    } else {
+        RelationCardinality::Optional
+    };
+
+    let steps = vec![
+        TransitiveRelationStep {
+            field_name: helper_field_name.clone(),
+            relation_id: RelationId::OneToMany(otm_relation_id),
+            entity_id: join_entity_id,
+            cardinality: join_cardinality,
+            is_optional: !shortcut.is_many,
+        },
+        TransitiveRelationStep {
+            field_name: shortcut.join_table_target_relation.clone(),
+            relation_id: RelationId::ManyToOne(mto_relation_id),
+            entity_id: target_entity_id,
+            cardinality: RelationCardinality::Optional,
+            is_optional: false,
+        },
+    ];
+
+    Ok(PostgresRelation::Transitive(TransitiveRelation {
+        path: vec![
+            helper_field_name,
+            shortcut.join_table_target_relation.clone(),
+        ],
+        steps,
+        final_entity_id: target_entity_id,
+    }))
+}
+
+fn create_join_table_intermediate_relation(
+    field: &ResolvedField,
+    type_id: SerializableSlabIndex<EntityType>,
+    shortcut: &ResolvedJoinTableIntermediateField,
+    building: &SystemContextBuilding,
+) -> Result<PostgresRelation, ModelBuildingError> {
+    let join_entity_id = building
+        .get_entity_type_id(&shortcut.join_table_type)
+        .ok_or_else(|| {
+            ModelBuildingError::Generic(format!(
+                "Unknown join table type '{}' referenced from field '{}'",
+                shortcut.join_table_type, field.name
+            ))
+        })?;
+
+    let source_entity = &building.entity_types[type_id];
+    let join_entity = &building.entity_types[join_entity_id];
+
+    let join_table_id = join_entity.table_id;
+    let source_table_id = source_entity.table_id;
+
+    let join_source_column_ids = building.database.get_column_ids_from_names(
+        join_table_id,
+        std::slice::from_ref(&shortcut.join_table_source_column),
+    );
+
+    let otm_relation_id = get_otm_relation_for_columns(
+        &join_source_column_ids,
+        &building.database,
+        Some(source_table_id),
+    )
+    .ok_or_else(|| {
+        ModelBuildingError::Generic(format!(
+            "Unable to determine relation from '{}' to join table '{}' for field '{}'",
+            source_entity.name, shortcut.join_table_type, field.name
+        ))
+    })?;
+
+    let cardinality = match &field.typ {
+        FieldType::List(_) => RelationCardinality::Unbounded,
+        _ => RelationCardinality::Optional,
+    };
+
+    Ok(PostgresRelation::OneToMany(OneToManyRelation {
+        foreign_entity_id: join_entity_id,
+        cardinality,
+        relation_id: otm_relation_id,
+    }))
+}
 fn compute_transitive_steps(
     field_name: &str,
     path: &[String],

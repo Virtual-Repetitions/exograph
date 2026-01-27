@@ -494,6 +494,7 @@ pub mod test_support {
 #[cfg(test)]
 mod tests {
     use super::test_support::{build, parse_sorted};
+    use core_model_builder::ast::ast_types::{AstAnnotationParams, AstExpr};
     use multiplatform_test::multiplatform_test;
 
     // Due to a change in insta version 1.12, test names (hence the snapshot names) get derived
@@ -559,6 +560,61 @@ mod tests {
         "#;
 
         assert_typechecking!(src, "with_auth_context_use_in_field_annotation");
+    }
+
+    #[multiplatform_test]
+    fn enum_literal_in_access_predicate() {
+        let src = r#"
+        enum TagSharingType {
+            PublicPlaybook
+            PrivatePlaybook
+        }
+
+        @postgres
+        module TagModule {
+            type Tag {
+                sharing: TagSharingType
+                @access(query=self.sharing == TagSharingType.PublicPlaybook) title: String
+            }
+        }
+        "#;
+
+        let built = build(src).unwrap();
+        let module = built
+            .modules
+            .iter()
+            .find(|(_, module)| module.0.name == "TagModule")
+            .map(|(_, module)| module)
+            .unwrap();
+        let tag_type = module.0.types.iter().find(|t| t.name == "Tag").unwrap();
+        let title_field = tag_type
+            .fields
+            .iter()
+            .find(|f| f.name == "title")
+            .unwrap();
+        let access = title_field
+            .annotations
+            .annotations
+            .get("access")
+            .unwrap();
+
+        let expr = match &access.params {
+            AstAnnotationParams::Single(expr, _) => expr,
+            _ => panic!("Expected single access expression"),
+        };
+
+        let AstExpr::RelationalOp(rel) = expr else {
+            panic!("Expected relational op in access expression");
+        };
+
+        let (_, right) = rel.sides();
+        match right {
+            AstExpr::EnumLiteral(enum_name, value, _, _) => {
+                assert_eq!(enum_name, "TagSharingType");
+                assert_eq!(value, "PublicPlaybook");
+            }
+            _ => panic!("Expected enum literal on right-hand side"),
+        }
     }
 
     #[multiplatform_test]
