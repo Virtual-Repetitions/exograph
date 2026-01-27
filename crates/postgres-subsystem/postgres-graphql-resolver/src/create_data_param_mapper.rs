@@ -204,13 +204,8 @@ async fn map_single<'a>(
         join_all(row).await.into_iter().flatten().collect();
 
     let mut row = row?;
-    let readonly_defaults = map_readonly_defaults(
-        data_type,
-        argument,
-        subsystem,
-        request_context,
-    )
-    .await?;
+    let readonly_defaults =
+        map_readonly_defaults(data_type, argument, subsystem, request_context).await?;
     row.extend(readonly_defaults);
 
     Ok((InsertionRow { elems: row }, vec![precheck_predicate]))
