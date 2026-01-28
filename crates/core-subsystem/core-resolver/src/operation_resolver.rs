@@ -84,13 +84,15 @@ impl FieldResolver<Value, SystemResolutionError, ()> for Value {
         let field_name = field.name.as_str();
 
         if let Value::Object(map) = self {
-            map.get(field_name).cloned().ok_or_else(|| {
-                SystemResolutionError::Generic(format!("No field named {field_name} in Object"))
-            })
+            if field_name == "__typename" {
+                return Ok(map
+                    .get(field_name)
+                    .cloned()
+                    .unwrap_or(Value::Null));
+            }
+            Ok(map.get(field_name).cloned().unwrap_or(Value::Null))
         } else {
-            Err(SystemResolutionError::Generic(format!(
-                "{field_name} is not an Object and doesn't have any fields"
-            )))
+            Ok(Value::Null)
         }
     }
 }
