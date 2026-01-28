@@ -85,10 +85,7 @@ impl FieldResolver<Value, SystemResolutionError, ()> for Value {
 
         if let Value::Object(map) = self {
             if field_name == "__typename" {
-                return Ok(map
-                    .get(field_name)
-                    .cloned()
-                    .unwrap_or(Value::Null));
+                return Ok(map.get(field_name).cloned().unwrap_or(Value::Null));
             }
             Ok(map.get(field_name).cloned().unwrap_or(Value::Null))
         } else {
