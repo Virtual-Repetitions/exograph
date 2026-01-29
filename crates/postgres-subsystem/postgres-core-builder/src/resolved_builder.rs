@@ -2132,18 +2132,17 @@ fn compute_column_info(
                     }
                 }
                 Type::Set(typ) => {
-                    if enclosing_is_json {
-                        if let Type::Composite(field_type) = typ.deref(types) {
-                            if field_type.annotations.contains("json") {
-                                return Ok(ColumnInfo {
-                                    names: vec![compute_column_name(&field.name)],
-                                    self_column: true,
-                                    unique_constraints,
-                                    indices,
-                                    cardinality: None,
-                                });
-                            }
-                        }
+                    if enclosing_is_json
+                        && let Type::Composite(field_type) = typ.deref(types)
+                        && field_type.annotations.contains("json")
+                    {
+                        return Ok(ColumnInfo {
+                            names: vec![compute_column_name(&field.name)],
+                            self_column: true,
+                            unique_constraints,
+                            indices,
+                            cardinality: None,
+                        });
                     }
 
                     if let Type::Composite(field_type) = typ.deref(types) {
@@ -2228,28 +2227,16 @@ fn compute_column_info(
                             indices,
                             cardinality: None,
                         })
-                    } else if enclosing_is_json {
-                        if let Type::Composite(field_type) = &underlying_resolved {
-                            if field_type.annotations.contains("json") {
-                                return Ok(ColumnInfo {
-                                    names: vec![compute_column_name(&field.name)],
-                                    self_column: true,
-                                    unique_constraints,
-                                    indices,
-                                    cardinality: None,
-                                });
-                            }
-                        }
-
-                        Err(Diagnostic {
-                            level: Level::Error,
-                            message: "Arrays of non-primitives are not supported".to_string(),
-                            code: Some("C000".to_string()),
-                            spans: vec![SpanLabel {
-                                span: field.span,
-                                style: SpanStyle::Primary,
-                                label: None,
-                            }],
+                    } else if enclosing_is_json
+                        && let Type::Composite(field_type) = &underlying_resolved
+                        && field_type.annotations.contains("json")
+                    {
+                        Ok(ColumnInfo {
+                            names: vec![compute_column_name(&field.name)],
+                            self_column: true,
+                            unique_constraints,
+                            indices,
+                            cardinality: None,
                         })
                     } else {
                         Err(Diagnostic {
