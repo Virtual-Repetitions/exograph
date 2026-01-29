@@ -1943,6 +1943,7 @@ fn compute_column_info(
         Some(ColumnMapping::Single(name)) => name.clone(),
         _ => field_name.to_snake_case(),
     };
+    let enclosing_is_json = enclosing_type.annotations.contains("json");
 
     let id_column_names = |field: &AstField<Typed>| -> Result<Vec<String>, Diagnostic> {
         let user_supplied_column_mapping = column_annotation_mapping(field);
@@ -2131,6 +2132,20 @@ fn compute_column_info(
                     }
                 }
                 Type::Set(typ) => {
+                    if enclosing_is_json {
+                        if let Type::Composite(field_type) = typ.deref(types) {
+                            if field_type.annotations.contains("json") {
+                                return Ok(ColumnInfo {
+                                    names: vec![compute_column_name(&field.name)],
+                                    self_column: true,
+                                    unique_constraints,
+                                    indices,
+                                    cardinality: None,
+                                });
+                            }
+                        }
+                    }
+
                     if let Type::Composite(field_type) = typ.deref(types) {
                         // OneToMany
                         let matching_field =
@@ -2202,7 +2217,9 @@ fn compute_column_info(
                         underlying_typ = t;
                     }
 
-                    if let Type::Primitive(_) = underlying_typ.deref(types) {
+                    let underlying_resolved = underlying_typ.deref(types);
+
+                    if let Type::Primitive(_) = &underlying_resolved {
                         // base type is a primitive, which means this is an Array
                         Ok(ColumnInfo {
                             names: vec![compute_column_name(&field.name)],
@@ -2210,6 +2227,29 @@ fn compute_column_info(
                             unique_constraints,
                             indices,
                             cardinality: None,
+                        })
+                    } else if enclosing_is_json {
+                        if let Type::Composite(field_type) = &underlying_resolved {
+                            if field_type.annotations.contains("json") {
+                                return Ok(ColumnInfo {
+                                    names: vec![compute_column_name(&field.name)],
+                                    self_column: true,
+                                    unique_constraints,
+                                    indices,
+                                    cardinality: None,
+                                });
+                            }
+                        }
+
+                        Err(Diagnostic {
+                            level: Level::Error,
+                            message: "Arrays of non-primitives are not supported".to_string(),
+                            code: Some("C000".to_string()),
+                            spans: vec![SpanLabel {
+                                span: field.span,
+                                style: SpanStyle::Primary,
+                                label: None,
+                            }],
                         })
                     } else {
                         Err(Diagnostic {
@@ -2613,6 +2653,37 @@ mod tests {
         }
         "#,
             "with_optional_fields"
+        );
+    }
+
+    #[multiplatform_test]
+    fn json_collection_of_json_types() {
+        let resolved = create_resolved_system_from_src(
+            r#"
+        @postgres
+        module ContentModule {
+            @json
+            type TeamAvailableContent {
+                tags: Array<TeamAvailableContentTag>
+                lessons: Set<TeamAvailableContentLesson>
+            }
+
+            @json
+            type TeamAvailableContentTag {
+                label: String
+            }
+
+            @json
+            type TeamAvailableContentLesson {
+                id: Int
+            }
+        }
+        "#,
+        );
+
+        assert!(
+            resolved.is_ok(),
+            "Expected @json collection fields to resolve without errors"
         );
     }
 
