@@ -44,7 +44,7 @@ pub struct PredicateParameter {
 /// This one provides a name for the parameter type, while holding to a pointer to the actual parameter type.
 /// This is needed because the parameter type is stored in a slab, and we need to be able to get the name of the parameter type
 /// without access to the subsystem that holds the slab.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PredicateParameterTypeWrapper {
     pub name: String,
     /// Type id of the parameter type. For example: IntFilter, StringFilter, etc.

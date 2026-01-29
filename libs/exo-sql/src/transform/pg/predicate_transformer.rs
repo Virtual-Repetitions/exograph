@@ -70,6 +70,9 @@ fn to_join_predicate(
         AbstractPredicate::In(l, r) => {
             ConcretePredicate::In(compute_leaf_column(l), compute_leaf_column(r))
         }
+        AbstractPredicate::ArrayContains(l, r) => {
+            ConcretePredicate::ArrayContains(compute_leaf_column(l), compute_leaf_column(r))
+        }
 
         AbstractPredicate::StringLike(l, r, cs) => {
             ConcretePredicate::StringLike(compute_leaf_column(l), compute_leaf_column(r), *cs)
@@ -415,6 +418,9 @@ fn attempt_subselect_predicate(
         AbstractPredicate::Gt(l, r) => binary_operator(l, r, AbstractPredicate::Gt),
         AbstractPredicate::Gte(l, r) => binary_operator(l, r, AbstractPredicate::Gte),
         AbstractPredicate::In(l, r) => binary_operator(l, r, AbstractPredicate::In),
+        AbstractPredicate::ArrayContains(l, r) => {
+            binary_operator(l, r, AbstractPredicate::ArrayContains)
+        }
         AbstractPredicate::StringLike(l, r, sens) => {
             binary_operator(l, r, |l, r| AbstractPredicate::StringLike(l, r, *sens))
         }
