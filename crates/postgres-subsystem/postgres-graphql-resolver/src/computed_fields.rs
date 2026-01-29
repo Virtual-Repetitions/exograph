@@ -15,7 +15,7 @@ use serde_json::{Value, map::Entry as JsonEntry};
 use crate::resolver::PostgresSubsystemResolver;
 use postgres_core_model::relation::PostgresRelation;
 use postgres_core_model::types::{
-    ComputedField, EntityType, PostgresField, PostgresFieldType, TypeIndex,
+    ComputedField, EntityRepresentation, EntityType, PostgresField, PostgresFieldType, TypeIndex,
 };
 use postgres_core_resolver::postgres_execution_error::PostgresExecutionError;
 
@@ -54,7 +54,7 @@ pub async fn apply_computed_fields_to_body(
 ) -> Result<(), PostgresExecutionError> {
     let entity_type = return_type.typ(&subsystem_resolver.subsystem.core_subsystem.entity_types);
 
-    if !has_computed_fields(entity_type, &field.subfields, subsystem_resolver) {
+    if !needs_postprocess(entity_type, &field.subfields, subsystem_resolver) {
         return Ok(());
     }
 
@@ -170,14 +170,18 @@ async fn process_entity(
         }
     };
 
+    let mut projected_keys: Vec<String> = Vec::with_capacity(selection.len() + 1);
+
     for selection_field in selection {
         let field_name = &selection_field.name;
 
         if field_name == "__typename" {
+            projected_keys.push(field_name.to_string());
             continue;
         }
 
         let output_name = selection_field.output_name();
+        projected_keys.push(output_name.clone());
 
         let entity_field = match entity_type.field_by_name(field_name) {
             Some(field) => field,
@@ -247,6 +251,10 @@ async fn process_entity(
             )
             .await?;
         }
+    }
+
+    if entity_type.representation == EntityRepresentation::Json {
+        obj.retain(|key, _| projected_keys.iter().any(|allowed| allowed == key));
     }
 
     Ok(())
@@ -352,21 +360,30 @@ async fn is_field_authorized(
     Ok(predicate != AbstractPredicate::False)
 }
 
-fn has_computed_fields(
+fn needs_postprocess(
     entity_type: &EntityType,
     selection: &[ValidatedField],
     subsystem_resolver: &PostgresSubsystemResolver,
 ) -> bool {
+    if entity_type.representation == EntityRepresentation::Json && !selection.is_empty() {
+        return true;
+    }
+
     for selection_field in selection {
         if let Some(entity_field) = entity_type.field_by_name(&selection_field.name) {
             match &entity_field.relation {
                 PostgresRelation::Computed(_) => return true,
+                PostgresRelation::Embedded => {
+                    if !selection_field.subfields.is_empty() {
+                        return true;
+                    }
+                }
                 PostgresRelation::ManyToOne { .. } | PostgresRelation::OneToMany(_) => {
                     if let Some(nested_return_type) = field_operation_return_type(&entity_field.typ)
                     {
                         let nested_entity = nested_return_type
                             .typ(&subsystem_resolver.subsystem.core_subsystem.entity_types);
-                        if has_computed_fields(
+                        if needs_postprocess(
                             nested_entity,
                             &selection_field.subfields,
                             subsystem_resolver,
