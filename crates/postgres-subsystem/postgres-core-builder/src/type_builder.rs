@@ -829,7 +829,14 @@ fn create_agg_field(
         let field_name = format!("{}Agg", field.name);
         let field_type_name = field.typ.name();
         let agg_type_name = aggregate_type_name(field_type_name);
-        let agg_type_id = building.aggregate_types.get_id(&agg_type_name).unwrap();
+        let agg_type_id = match building.aggregate_types.get_id(&agg_type_name) {
+            Some(id) => id,
+            None => {
+                // Aggregate types only exist for core entity types; skip creating an aggregate
+                // field when the list element is a non-entity (e.g., @json helper types).
+                return Ok(None);
+            }
+        };
 
         let relation = Some(create_relation(
             field,

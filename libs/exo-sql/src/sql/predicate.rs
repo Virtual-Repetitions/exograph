@@ -43,6 +43,7 @@ where
     Gt(C, C),
     Gte(C, C),
     In(C, C),
+    ArrayContains(C, C),
 
     // string predicates
     StringLike(C, C, CaseSensitivity),
@@ -199,6 +200,12 @@ impl ExpressionBuilder for ConcretePredicate {
             }
             ConcretePredicate::In(column1, column2) => {
                 relational_combine(column1, column2, "IN", database, builder)
+            }
+            ConcretePredicate::ArrayContains(array_column, element) => {
+                element.build(database, builder);
+                builder.push_str(" = ANY(");
+                array_column.build(database, builder);
+                builder.push(')');
             }
 
             ConcretePredicate::StringLike(column1, column2, case_sensitivity) => {
@@ -471,6 +478,54 @@ mod tests {
             ends_with_predicate.to_sql(&database),
             r#""videos"."title" LIKE '%' || $1"#,
             "utawaku"
+        );
+    }
+
+    #[multiplatform_test]
+    fn array_contains_predicate() {
+        use crate::schema::column_spec::ColumnSpec;
+        use crate::sql::physical_column_type::{ArrayColumnType, StringColumnType};
+
+        let database = DatabaseSpec::new(
+            vec![TableSpec::new(
+                SchemaObjectName::new("accounts", None),
+                vec![
+                    pk_column("id"),
+                    ColumnSpec {
+                        name: "types".to_string(),
+                        typ: Box::new(ArrayColumnType::new(Box::new(StringColumnType {
+                            max_length: None,
+                        }))),
+                        reference_specs: None,
+                        is_pk: false,
+                        is_nullable: false,
+                        unique_constraints: vec![],
+                        default_value: None,
+                    },
+                ],
+                vec![],
+                vec![],
+                true,
+            )],
+            vec![],
+            vec![],
+        )
+        .to_database();
+
+        let accounts_table_id = database
+            .get_table_id(&SchemaObjectName::new("accounts", None))
+            .unwrap();
+        let types_column_id = database.get_column_id(accounts_table_id, "types").unwrap();
+
+        let array_col = Column::physical(types_column_id, None);
+        let element_col = Column::Param(SQLParamContainer::str("player"));
+
+        let predicate = ConcretePredicate::ArrayContains(array_col, element_col);
+
+        assert_binding!(
+            predicate.to_sql(&database),
+            r#"$1 = ANY("accounts"."types")"#,
+            "player"
         );
     }
 

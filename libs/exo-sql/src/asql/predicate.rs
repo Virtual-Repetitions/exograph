@@ -28,6 +28,7 @@ impl AbstractPredicate {
             | AbstractPredicate::Gt(l, r)
             | AbstractPredicate::Gte(l, r)
             | AbstractPredicate::In(l, r)
+            | AbstractPredicate::ArrayContains(l, r)
             | AbstractPredicate::StringLike(l, r, _)
             | AbstractPredicate::StringStartsWith(l, r)
             | AbstractPredicate::StringEndsWith(l, r)

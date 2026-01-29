@@ -73,6 +73,10 @@ fn prefix_predicate(
         AbstractPredicate::In(l, r) => {
             AbstractPredicate::In(prefix_column_path(l, prefix), prefix_column_path(r, prefix))
         }
+        AbstractPredicate::ArrayContains(l, r) => AbstractPredicate::ArrayContains(
+            prefix_column_path(l, prefix),
+            prefix_column_path(r, prefix),
+        ),
         AbstractPredicate::StringLike(l, r, cs) => AbstractPredicate::StringLike(
             prefix_column_path(l, prefix),
             prefix_column_path(r, prefix),
@@ -161,15 +165,24 @@ impl<'a> SQLMapper<'a, AbstractPredicate> for PredicateParamInput<'a> {
 
         match &parameter_type.kind {
             PredicateParameterTypeKind::ImplicitEqual => {
-                let (op_key_path, op_value_path) = operands(
-                    self.param,
-                    argument,
-                    None,
-                    &self.parent_column_path,
-                    subsystem,
-                )?;
+                if let Some(element_type) = array_element_type(self.param, subsystem) {
+                    let column_path = ColumnPath::Physical(
+                        to_column_path(&self.parent_column_path, &self.param.column_path_link)
+                            .unwrap(),
+                    );
+                    let op_value = literal_column_path(argument, element_type, false)?;
+                    Ok(AbstractPredicate::ArrayContains(column_path, op_value))
+                } else {
+                    let (op_key_path, op_value_path) = operands(
+                        self.param,
+                        argument,
+                        None,
+                        &self.parent_column_path,
+                        subsystem,
+                    )?;
 
-                Ok(AbstractPredicate::eq(op_key_path, op_value_path))
+                    Ok(AbstractPredicate::eq(op_key_path, op_value_path))
+                }
             }
             PredicateParameterTypeKind::Reference(parameters) => {
                 parameters
@@ -305,6 +318,77 @@ impl<'a> SQLMapper<'a, AbstractPredicate> for PredicateParamInput<'a> {
                                         )),
                                     }
                                 } else {
+                                    if let Some(element_type) =
+                                        array_element_type(self.param, subsystem)
+                                    {
+                                        match parameter.name.as_str() {
+                                            "eq" | "contains" | "neq" => {
+                                                let column_path = ColumnPath::Physical(
+                                                    to_column_path(
+                                                        &self.parent_column_path,
+                                                        &self.param.column_path_link,
+                                                    )
+                                                    .unwrap(),
+                                                );
+                                                let op_value = literal_column_path(
+                                                    op_value,
+                                                    element_type,
+                                                    false,
+                                                )?;
+                                                let predicate = AbstractPredicate::ArrayContains(
+                                                    column_path,
+                                                    op_value,
+                                                );
+                                                return Ok(match parameter.name.as_str() {
+                                                    "neq" => {
+                                                        AbstractPredicate::Not(Box::new(predicate))
+                                                    }
+                                                    _ => predicate,
+                                                });
+                                            }
+                                            "overlaps" => {
+                                                let values = match op_value {
+                                                    Val::List(values) => values,
+                                                    _ => {
+                                                        return Err(
+                                                            PostgresExecutionError::Validation(
+                                                                self.param.name.clone(),
+                                                                "Overlaps expects a list value"
+                                                                    .into(),
+                                                            ),
+                                                        );
+                                                    }
+                                                };
+
+                                                let column_path = ColumnPath::Physical(
+                                                    to_column_path(
+                                                        &self.parent_column_path,
+                                                        &self.param.column_path_link,
+                                                    )
+                                                    .unwrap(),
+                                                );
+
+                                                let mut acc = AbstractPredicate::False;
+                                                for value in values {
+                                                    let op_value = literal_column_path(
+                                                        value,
+                                                        element_type,
+                                                        false,
+                                                    )?;
+                                                    let predicate =
+                                                        AbstractPredicate::ArrayContains(
+                                                            column_path.clone(),
+                                                            op_value,
+                                                        );
+                                                    acc = AbstractPredicate::or(acc, predicate);
+                                                }
+
+                                                return Ok(acc);
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+
                                     let string_type = StringColumnType { max_length: None };
                                     let array_type = ArrayColumnType {
                                         typ: Box::new(string_type),
@@ -570,6 +654,24 @@ pub fn predicate_from_name<C: PartialEq + ParamEquality>(
     }
 }
 
+fn array_element_type<'a>(
+    param: &PredicateParameter,
+    subsystem: &'a PostgresGraphQLSubsystem,
+) -> Option<&'a dyn PhysicalColumnType> {
+    let column_path_link = param.column_path_link.as_ref()?;
+    let column_ids = column_path_link.self_column_ids();
+    if column_ids.len() != 1 {
+        return None;
+    }
+    let column = column_ids[0].get_column(&subsystem.core_subsystem.database);
+    column
+        .typ
+        .inner()
+        .as_any()
+        .downcast_ref::<ArrayColumnType>()
+        .map(|array_type| array_type.typ.as_ref())
+}
+
 fn operands<'a>(
     param: &'a PredicateParameter,
     op_value: &'a Val,
@@ -794,5 +896,151 @@ mod tests {
         .expect("Predicate computation failed");
 
         assert_ne!(predicate, AbstractPredicate::True);
+    }
+
+    fn build_request_context() -> RequestContext<'static> {
+        let env = Box::leak(Box::new(MapEnvironment::new()));
+        let router = Box::leak(Box::new(DummyRouter));
+        let jwt: &'static Option<common::context::JwtAuthenticator> = Box::leak(Box::new(None));
+        let request = Box::leak(Box::new(DummyRequest));
+
+        RequestContext::new(request, vec![], router, jwt, env)
+    }
+
+    #[tokio::test]
+    async fn array_contains_filter_maps_to_array_predicate() {
+        let subsystem = create_postgres_system_from_str(
+            r#"
+            @postgres
+            module TrainingModule {
+                @access(true)
+                type Training {
+                    @pk id: Int = autoIncrement()
+                    tags: Array<String>
+                }
+            }
+            "#,
+            "training.exo".to_string(),
+        )
+        .await
+        .expect("Failed to build subsystem");
+
+        let (training_entity_id, training_entity) = subsystem
+            .core_subsystem
+            .entity_types
+            .iter()
+            .find(|(_, entity)| entity.name.as_str() == "Training")
+            .expect("Training entity not found");
+
+        let tags_column_id = subsystem
+            .core_subsystem
+            .database
+            .get_column_id(training_entity.table_id, "tags")
+            .unwrap();
+
+        let trainings_collection_query = subsystem.get_collection_query(training_entity_id);
+        let predicate_param = &trainings_collection_query.parameters.predicate_param;
+
+        let mut tags_filter = HashMap::new();
+        tags_filter.insert("contains".to_string(), Val::String("player".to_string()));
+
+        let mut where_filter = HashMap::new();
+        where_filter.insert("tags".to_string(), Val::Object(tags_filter));
+
+        let mut arguments: Arguments = IndexMap::new();
+        arguments.insert(predicate_param.name.clone(), Val::Object(where_filter));
+
+        let request_context = build_request_context();
+
+        let predicate = compute_predicate(
+            &[predicate_param],
+            &arguments,
+            &subsystem,
+            &request_context,
+            false,
+        )
+        .await
+        .expect("Predicate computation failed");
+
+        let expected = AbstractPredicate::ArrayContains(
+            ColumnPath::Physical(PhysicalColumnPath::leaf(tags_column_id)),
+            ColumnPath::Param(SQLParamContainer::string("player".to_string())),
+        );
+
+        assert_eq!(predicate, expected);
+    }
+
+    #[tokio::test]
+    async fn array_overlaps_filter_expands_to_or_predicate() {
+        let subsystem = create_postgres_system_from_str(
+            r#"
+            @postgres
+            module TrainingModule {
+                @access(true)
+                type Training {
+                    @pk id: Int = autoIncrement()
+                    tags: Array<String>
+                }
+            }
+            "#,
+            "training.exo".to_string(),
+        )
+        .await
+        .expect("Failed to build subsystem");
+
+        let (training_entity_id, training_entity) = subsystem
+            .core_subsystem
+            .entity_types
+            .iter()
+            .find(|(_, entity)| entity.name.as_str() == "Training")
+            .expect("Training entity not found");
+
+        let tags_column_id = subsystem
+            .core_subsystem
+            .database
+            .get_column_id(training_entity.table_id, "tags")
+            .unwrap();
+
+        let trainings_collection_query = subsystem.get_collection_query(training_entity_id);
+        let predicate_param = &trainings_collection_query.parameters.predicate_param;
+
+        let overlaps_values = vec![
+            Val::String("player".to_string()),
+            Val::String("coach".to_string()),
+        ];
+
+        let mut tags_filter = HashMap::new();
+        tags_filter.insert("overlaps".to_string(), Val::List(overlaps_values));
+
+        let mut where_filter = HashMap::new();
+        where_filter.insert("tags".to_string(), Val::Object(tags_filter));
+
+        let mut arguments: Arguments = IndexMap::new();
+        arguments.insert(predicate_param.name.clone(), Val::Object(where_filter));
+
+        let request_context = build_request_context();
+
+        let predicate = compute_predicate(
+            &[predicate_param],
+            &arguments,
+            &subsystem,
+            &request_context,
+            false,
+        )
+        .await
+        .expect("Predicate computation failed");
+
+        let column_path = ColumnPath::Physical(PhysicalColumnPath::leaf(tags_column_id));
+        let first = AbstractPredicate::ArrayContains(
+            column_path.clone(),
+            ColumnPath::Param(SQLParamContainer::string("player".to_string())),
+        );
+        let second = AbstractPredicate::ArrayContains(
+            column_path,
+            ColumnPath::Param(SQLParamContainer::string("coach".to_string())),
+        );
+        let expected = AbstractPredicate::or(first, second);
+
+        assert_eq!(predicate, expected);
     }
 }
