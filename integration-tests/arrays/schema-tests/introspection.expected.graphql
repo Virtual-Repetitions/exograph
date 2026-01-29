@@ -27,8 +27,8 @@ To check a field against null, use a `<field name>: null` filter
 input ChessPieceFilter {
   id: IntFilter
   name: StringFilter
-  position_history: StringFilter
-  neighbor_info: StringFilter
+  position_history: StringArrayFilter
+  neighbor_info: StringArrayFilter
   and: [ChessPieceFilter!]
   or: [ChessPieceFilter!]
   not: ChessPieceFilter
@@ -72,6 +72,13 @@ type StringAgg {
   min: String
   max: String
   count: Int
+}
+
+input StringArrayFilter {
+  eq: String
+  neq: String
+  contains: String
+  overlaps: [String!]
 }
 
 input StringFilter {

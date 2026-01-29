@@ -77,6 +77,16 @@ pub fn build_shallow(types: &MappedArena<ResolvedType>, building: &mut SystemCon
                         underlying_type: None,
                     },
                 );
+
+                let array_param_type_name = get_array_filter_type_name(&type_name);
+                building.predicate_types.add(
+                    &array_param_type_name,
+                    PredicateParameterType {
+                        name: array_param_type_name.to_string(),
+                        kind: PredicateParameterTypeKind::ImplicitEqual,
+                        underlying_type: None,
+                    },
+                );
             }
             ResolvedType::Enum(e) => {
                 building.predicate_types.add(
@@ -93,6 +103,16 @@ pub fn build_shallow(types: &MappedArena<ResolvedType>, building: &mut SystemCon
                     &type_name,
                     PredicateParameterType {
                         name: type_name.to_string(),
+                        kind: PredicateParameterTypeKind::ImplicitEqual,
+                        underlying_type: None,
+                    },
+                );
+
+                let array_type_name = get_array_filter_type_name(&e.name);
+                building.predicate_types.add(
+                    &array_type_name,
+                    PredicateParameterType {
+                        name: array_type_name.to_string(),
                         kind: PredicateParameterTypeKind::ImplicitEqual,
                         underlying_type: None,
                     },
@@ -145,6 +165,12 @@ pub fn build_expanded(resolved_env: &ResolvedTypeEnv, building: &mut SystemConte
 
         let new_kind = expand_primitive_type(primitive_type, building);
         building.predicate_types[existing_param_id.unwrap()].kind = new_kind;
+
+        let array_param_type_name = get_array_filter_type_name(&primitive_type.name);
+        if let Some(array_param_id) = building.predicate_types.get_id(&array_param_type_name) {
+            let array_kind = expand_array_type(primitive_type, building);
+            building.predicate_types[array_param_id].kind = array_kind;
+        }
     }
 
     for (entity_type_id, entity_type) in building.core_subsystem.entity_types.iter() {
@@ -185,6 +211,10 @@ pub fn get_filter_type_name(type_name: &str) -> String {
 
 pub fn get_unique_filter_type_name(type_name: &str) -> String {
     format!("{type_name}UniqueFilter")
+}
+
+pub fn get_array_filter_type_name(type_name: &str) -> String {
+    format!("{type_name}ArrayFilter")
 }
 
 fn expand_primitive_type(
@@ -259,7 +289,13 @@ fn expand_entity_type(
         .iter()
         .filter(|field| is_normal_field(field, building))
         .map(|field| {
-            let param_type_name = get_filter_type_name(field.typ.name());
+            let param_type_name = if matches!(field.relation, PostgresRelation::Scalar { .. })
+                && matches!(field.typ.base_type(), FieldType::List(_))
+            {
+                get_array_filter_type_name(field.typ.name())
+            } else {
+                get_filter_type_name(field.typ.name())
+            };
 
             let column_path_link = Some(
                 field
@@ -442,4 +478,54 @@ fn create_operator_filter_type_kind(
             primitive_type.name
         )
     }
+}
+
+fn expand_array_type(
+    primitive_type: &PostgresPrimitiveType,
+    building: &SystemContextBuilding,
+) -> PredicateParameterTypeKind {
+    let param_type_id = building
+        .predicate_types
+        .get_id(&primitive_type.name)
+        .unwrap();
+    let base_type = FieldType::Plain(PredicateParameterTypeWrapper {
+        name: primitive_type.name.to_owned(),
+        type_id: param_type_id,
+    });
+
+    let scalar_operand = FieldType::Optional(Box::new(base_type.clone()));
+    let list_operand = FieldType::Optional(Box::new(FieldType::List(Box::new(base_type))));
+
+    let parameters = vec![
+        PredicateParameter {
+            name: "eq".to_string(),
+            typ: scalar_operand.clone(),
+            column_path_link: None,
+            access: None,
+            vector_distance_function: None,
+        },
+        PredicateParameter {
+            name: "neq".to_string(),
+            typ: scalar_operand.clone(),
+            column_path_link: None,
+            access: None,
+            vector_distance_function: None,
+        },
+        PredicateParameter {
+            name: "contains".to_string(),
+            typ: scalar_operand,
+            column_path_link: None,
+            access: None,
+            vector_distance_function: None,
+        },
+        PredicateParameter {
+            name: "overlaps".to_string(),
+            typ: list_operand,
+            column_path_link: None,
+            access: None,
+            vector_distance_function: None,
+        },
+    ];
+
+    PredicateParameterTypeKind::Operator(parameters)
 }
