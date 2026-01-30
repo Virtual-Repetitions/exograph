@@ -27,7 +27,7 @@ use postgres_graphql_model::{
 use postgres_core_model::{
     predicate::{PredicateParameter, PredicateParameterType, PredicateParameterTypeWrapper},
     relation::PostgresRelation,
-    types::{EntityRepresentation, EntityType, PostgresField, PostgresPrimitiveType},
+    types::{EntityType, PostgresField, PostgresPrimitiveType},
 };
 
 use crate::predicate_builder::get_unique_filter_type_name;
@@ -54,7 +54,7 @@ pub fn build_shallow(types: &MappedArena<ResolvedType>, building: &mut SystemCon
 
     for (_, typ) in types.iter() {
         if let ResolvedType::Composite(c) = &typ {
-            if c.representation == EntityRepresentation::Json {
+            if c.representation.is_json_like() {
                 continue;
             }
 
@@ -106,7 +106,7 @@ pub fn build_expanded(resolved_env: &ResolvedTypeEnv, building: &mut SystemConte
         .core_subsystem
         .entity_types
         .iter()
-        .filter(|(_, et)| et.representation != EntityRepresentation::Json)
+        .filter(|(_, et)| !et.representation.is_json_like())
     {
         if read_access_is_false(entity_type) {
             continue;

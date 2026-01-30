@@ -156,6 +156,10 @@ where
             let mut command = tokio::process::Command::new(&server_binary);
 
             command.kill_on_drop(true);
+            command
+                .stdin(Stdio::inherit())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit());
 
             if let Some(port) = server_port {
                 command.env(EXO_SERVER_PORT, port.to_string());

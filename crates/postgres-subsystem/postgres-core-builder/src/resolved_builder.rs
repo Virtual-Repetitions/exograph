@@ -1000,8 +1000,42 @@ fn resolve_composite_type(
             (None, None) => true,
         };
 
-        let representation = if ct.annotations.contains("json") {
+        let is_json = ct.annotations.contains("json");
+        let is_computed = ct.annotations.contains("computed");
+
+        if is_json && is_computed {
+            errors.push(Diagnostic {
+                level: Level::Error,
+                message: format!("Type '{}' cannot use both @json and @computed", ct.name),
+                code: Some("C000".to_string()),
+                spans: vec![SpanLabel {
+                    span: ct.span,
+                    style: SpanStyle::Primary,
+                    label: None,
+                }],
+            });
+        }
+
+        if is_computed && table_annotation.is_some() {
+            errors.push(Diagnostic {
+                level: Level::Error,
+                message: format!(
+                    "Type '{}' cannot use @table when marked as @computed",
+                    ct.name
+                ),
+                code: Some("C000".to_string()),
+                spans: vec![SpanLabel {
+                    span: ct.span,
+                    style: SpanStyle::Primary,
+                    label: None,
+                }],
+            });
+        }
+
+        let representation = if is_json {
             EntityRepresentation::Json
+        } else if is_computed {
+            EntityRepresentation::Computed
         } else if table_managed {
             EntityRepresentation::Managed
         } else {
@@ -1010,13 +1044,13 @@ fn resolve_composite_type(
 
         let access_annotation = ct.annotations.get("access");
 
-        let is_json = representation == EntityRepresentation::Json;
+        let is_json_like = representation.is_json_like();
 
-        if is_json && access_annotation.is_some() {
+        if is_json_like && access_annotation.is_some() {
             errors.push(Diagnostic {
                 level: Level::Error,
                 message: format!(
-                    "Cannot use @access for type {}. Json types behave like a primitive (and thus have always-allowed access)",
+                    "Cannot use @access for type {}. Json and computed types behave like a primitive (and thus have always-allowed access)",
                     ct.name
                 ),
                 code: Some("C000".to_string()),
@@ -1040,7 +1074,7 @@ fn resolve_composite_type(
         let join_table_config = join_table_annotation
             .and_then(|annotation| parse_join_table_annotation(ct, annotation, errors));
 
-        let mut access = if is_json {
+        let mut access = if is_json_like {
             // As if the user has annotated with `access(true)`
             ResolvedAccess {
                 default: Some(AstExpr::BooleanLiteral(true, default_span())),
@@ -1054,7 +1088,7 @@ fn resolve_composite_type(
 
         let (resolved_fields, ownership_field_found) = resolve_composite_type_fields(
             ct,
-            is_json,
+            is_json_like,
             table_managed,
             module_base_path,
             typechecked_system,
@@ -1120,7 +1154,7 @@ fn resolve_composite_type(
 
 fn resolve_composite_type_fields(
     ct: &AstModel<Typed>,
-    is_json: bool,
+    is_json_like: bool,
     table_managed: bool,
     module_base_path: &Path,
     typechecked_system: &TypecheckedSystem,
@@ -1138,13 +1172,13 @@ fn resolve_composite_type_fields(
 
         let access_annotation = field.annotations.get("access");
 
-        if is_json && access_annotation.is_some() {
+        if is_json_like && access_annotation.is_some() {
             errors.push(Diagnostic {
-                level: Level::Error,
-                message: format!(
-                    "Cannot use @access for field '{}' in a type with a '@json' annotation",
-                    field.name
-                ),
+            level: Level::Error,
+            message: format!(
+                "Cannot use @access for field '{}' in a type with a '@json' or '@computed' annotation",
+                field.name
+            ),
                 code: Some("C000".to_string()),
                 spans: vec![SpanLabel {
                     span: field.span,
@@ -1944,6 +1978,8 @@ fn compute_column_info(
         _ => field_name.to_snake_case(),
     };
     let enclosing_is_json = enclosing_type.annotations.contains("json");
+    let enclosing_is_computed = enclosing_type.annotations.contains("computed");
+    let enclosing_is_json_like = enclosing_is_json || enclosing_is_computed;
 
     let id_column_names = |field: &AstField<Typed>| -> Result<Vec<String>, Diagnostic> {
         let user_supplied_column_mapping = column_annotation_mapping(field);
@@ -2013,7 +2049,9 @@ fn compute_column_info(
         AstFieldType::Plain(..) => {
             match field_base_type.to_typ(types).deref(types) {
                 Type::Composite(field_type) => {
-                    if field_type.annotations.contains("json") {
+                    if field_type.annotations.contains("json")
+                        || (enclosing_is_json_like && enclosing_is_computed)
+                    {
                         return Ok(ColumnInfo {
                             names: vec![compute_column_name(&field.name)],
                             self_column: true,
@@ -2132,9 +2170,9 @@ fn compute_column_info(
                     }
                 }
                 Type::Set(typ) => {
-                    if enclosing_is_json
-                        && let Type::Composite(field_type) = typ.deref(types)
-                        && field_type.annotations.contains("json")
+                    if let Type::Composite(field_type) = typ.deref(types)
+                        && (field_type.annotations.contains("json")
+                            || (enclosing_is_json_like && enclosing_is_computed))
                     {
                         return Ok(ColumnInfo {
                             names: vec![compute_column_name(&field.name)],
@@ -2227,17 +2265,29 @@ fn compute_column_info(
                             indices,
                             cardinality: None,
                         })
-                    } else if enclosing_is_json
-                        && let Type::Composite(field_type) = &underlying_resolved
-                        && field_type.annotations.contains("json")
-                    {
-                        Ok(ColumnInfo {
-                            names: vec![compute_column_name(&field.name)],
-                            self_column: true,
-                            unique_constraints,
-                            indices,
-                            cardinality: None,
-                        })
+                    } else if let Type::Composite(field_type) = &underlying_resolved {
+                        if field_type.annotations.contains("json")
+                            || (enclosing_is_json_like && enclosing_is_computed)
+                        {
+                            Ok(ColumnInfo {
+                                names: vec![compute_column_name(&field.name)],
+                                self_column: true,
+                                unique_constraints,
+                                indices,
+                                cardinality: None,
+                            })
+                        } else {
+                            Err(Diagnostic {
+                                level: Level::Error,
+                                message: "Arrays of non-primitives are not supported".to_string(),
+                                code: Some("C000".to_string()),
+                                spans: vec![SpanLabel {
+                                    span: field.span,
+                                    style: SpanStyle::Primary,
+                                    label: None,
+                                }],
+                            })
+                        }
                     } else {
                         Err(Diagnostic {
                             level: Level::Error,
@@ -2671,6 +2721,37 @@ mod tests {
         assert!(
             resolved.is_ok(),
             "Expected @json collection fields to resolve without errors"
+        );
+    }
+
+    #[multiplatform_test]
+    fn computed_collection_of_computed_types() {
+        let resolved = create_resolved_system_from_src(
+            r#"
+        @postgres
+        module ContentModule {
+            @computed
+            type TeamAvailablePlaybook {
+                tags: Array<TeamAvailablePlaybookTag>
+                lessons: Set<TeamAvailablePlaybookLesson>
+            }
+
+            @computed
+            type TeamAvailablePlaybookTag {
+                label: String
+            }
+
+            @computed
+            type TeamAvailablePlaybookLesson {
+                id: Int
+            }
+        }
+        "#,
+        );
+
+        assert!(
+            resolved.is_ok(),
+            "Expected @computed collection fields to resolve without errors"
         );
     }
 

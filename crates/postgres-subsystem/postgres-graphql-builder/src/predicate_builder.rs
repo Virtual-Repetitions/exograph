@@ -12,6 +12,7 @@ use core_model::{
     types::{FieldType, Named},
 };
 use exo_sql::ColumnPathLink;
+use postgres_core_model::relation::PostgresRelation;
 use postgres_core_model::types::{EntityType, PostgresField, PostgresPrimitiveType, TypeIndex};
 use postgres_core_model::{
     predicate::{
@@ -20,7 +21,6 @@ use postgres_core_model::{
     },
     types::PostgresPrimitiveTypeKind,
 };
-use postgres_core_model::{relation::PostgresRelation, types::EntityRepresentation};
 
 use super::system_builder::SystemContextBuilding;
 
@@ -119,7 +119,7 @@ pub fn build_shallow(types: &MappedArena<ResolvedType>, building: &mut SystemCon
                 );
             }
             ResolvedType::Composite(c @ ResolvedCompositeType { .. }) => {
-                if c.representation == EntityRepresentation::Json {
+                if c.representation.is_json_like() {
                     continue;
                 }
 
@@ -174,7 +174,7 @@ pub fn build_expanded(resolved_env: &ResolvedTypeEnv, building: &mut SystemConte
     }
 
     for (entity_type_id, entity_type) in building.core_subsystem.entity_types.iter() {
-        if entity_type.representation == EntityRepresentation::Json {
+        if entity_type.representation.is_json_like() {
             continue;
         }
 
@@ -256,7 +256,7 @@ fn expand_entity_type(
     entity_type: &EntityType,
     building: &SystemContextBuilding,
 ) -> PredicateParameterTypeKind {
-    if entity_type.representation == EntityRepresentation::Json {
+    if entity_type.representation.is_json_like() {
         return PredicateParameterTypeKind::ImplicitEqual;
     }
 
@@ -276,7 +276,7 @@ fn expand_entity_type(
         let field_type_id = &field.typ.innermost().type_id;
         if let TypeIndex::Composite(index) = field_type_id {
             let field_type = &building.core_subsystem.entity_types[*index];
-            field_type.representation != EntityRepresentation::Json
+            !field_type.representation.is_json_like()
         } else {
             true
         }

@@ -25,10 +25,7 @@ use postgres_graphql_model::{
 use postgres_core_model::{
     access::DatabaseAccessPrimitiveExpression,
     relation::PostgresRelation,
-    types::{
-        EntityRepresentation, EntityType, PostgresField, PostgresFieldType, PostgresType,
-        TypeIndex, base_type,
-    },
+    types::{EntityType, PostgresField, PostgresFieldType, PostgresType, TypeIndex, base_type},
 };
 
 use crate::utils::{MutationTypeKind, to_mutation_type};
@@ -104,7 +101,7 @@ pub trait MutationBuilder {
         entity_type: &EntityType,
         building: &SystemContextBuilding,
     ) -> Vec<PostgresMutation> {
-        if entity_type.representation == EntityRepresentation::Json {
+        if entity_type.representation.is_json_like() {
             return vec![];
         }
 
@@ -338,7 +335,7 @@ pub trait DataParamBuilder<D> {
 
         // For typed-json fields, we don't need to make them optional (i.e. force to supply all non-optional fields)
         let is_json_typed = match top_level_type {
-            Some(top_level_type) => top_level_type.representation == EntityRepresentation::Json,
+            Some(top_level_type) => top_level_type.representation.is_json_like(),
             None => false,
         };
 

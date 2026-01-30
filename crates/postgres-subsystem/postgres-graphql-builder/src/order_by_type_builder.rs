@@ -19,9 +19,7 @@ use postgres_graphql_model::{
 };
 
 use postgres_core_model::relation::PostgresRelation;
-use postgres_core_model::types::{
-    EntityRepresentation, EntityType, PostgresField, PostgresPrimitiveType, PostgresType,
-};
+use postgres_core_model::types::{EntityType, PostgresField, PostgresPrimitiveType, PostgresType};
 
 use postgres_core_model::access::Access;
 
@@ -78,7 +76,7 @@ pub fn build_shallow(resolved_env: &ResolvedTypeEnv, building: &mut SystemContex
 
     for (_, typ) in resolved_env.resolved_types.iter() {
         if let ResolvedType::Composite(ResolvedCompositeType { representation, .. }) = typ {
-            if *representation == EntityRepresentation::Json {
+            if representation.is_json_like() {
                 continue;
             }
             let shallow_type = create_shallow_type(typ);
@@ -93,7 +91,7 @@ pub fn build_expanded(resolved_env: &ResolvedTypeEnv, building: &mut SystemConte
         .core_subsystem
         .entity_types
         .iter()
-        .filter(|(_, et)| et.representation != EntityRepresentation::Json)
+        .filter(|(_, et)| !et.representation.is_json_like())
     {
         let param_type_name = get_parameter_type_name(&entity_type.name, false);
         let existing_param_id = building.order_by_types.get_id(&param_type_name);
@@ -231,7 +229,7 @@ pub fn new_field_param(
         field_type_id.to_type(primitive_types.values_ref(), entity_types.values_ref());
 
     if let PostgresType::Composite(ct) = &field_entity_type
-        && ct.representation == EntityRepresentation::Json
+        && ct.representation.is_json_like()
     {
         return None;
     }

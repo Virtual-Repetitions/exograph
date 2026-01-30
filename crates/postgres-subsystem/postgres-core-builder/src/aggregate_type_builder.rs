@@ -13,7 +13,6 @@ use core_model_builder::error::ModelBuildingError;
 use postgres_core_model::aggregate::{
     AggregateField, AggregateFieldType, AggregateType, ScalarAggregateFieldKind,
 };
-use postgres_core_model::types::EntityRepresentation;
 
 use crate::resolved_type::ResolvedType;
 use crate::resolved_type::ResolvedTypeEnv;
@@ -28,7 +27,7 @@ pub fn aggregate_type_name(type_name: &str) -> String {
 
 fn needs_aggregate(resolved_type: &ResolvedType) -> bool {
     if let ResolvedType::Composite(c) = resolved_type
-        && c.representation == EntityRepresentation::Json
+        && c.representation.is_json_like()
     {
         return false;
     }

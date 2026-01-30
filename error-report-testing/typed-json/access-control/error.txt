@@ -1,9 +1,9 @@
-error[C000]: Cannot use @access for type Metadata. Json types behave like a primitive (and thus have always-allowed access)
+error[C000]: Cannot use @access for type Metadata. Json and computed types behave like a primitive (and thus have always-allowed access)
   --> src/index.exo:12:8
    |
 12 |   type Metadata {
    |        ^^^^^^^^
-error[C000]: Cannot use @access for field 'notes' in a type with a '@json' annotation
+error[C000]: Cannot use @access for field 'notes' in a type with a '@json' or '@computed' annotation
   --> src/index.exo:13:5
    |
 13 | /     @access(true)

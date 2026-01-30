@@ -73,8 +73,18 @@ pub enum PostgresPrimitiveTypeKind {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 pub enum EntityRepresentation {
     Json,
+    Computed,
     Managed,
     NotManaged,
+}
+
+impl EntityRepresentation {
+    pub fn is_json_like(self) -> bool {
+        matches!(
+            self,
+            EntityRepresentation::Json | EntityRepresentation::Computed
+        )
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
