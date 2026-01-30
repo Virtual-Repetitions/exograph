@@ -27,7 +27,7 @@ use postgres_graphql_model::{
 use postgres_core_model::{
     predicate::{PredicateParameter, PredicateParameterType, PredicateParameterTypeWrapper},
     relation::PostgresRelation,
-    types::{EntityRepresentation, EntityType, PostgresField, PostgresPrimitiveType},
+    types::{EntityType, PostgresField, PostgresPrimitiveType},
 };
 
 use crate::predicate_builder::get_unique_filter_type_name;

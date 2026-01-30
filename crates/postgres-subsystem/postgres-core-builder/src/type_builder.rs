@@ -30,8 +30,7 @@ use core_model::primitive_type;
 use core_model::types::{Named, TypeValidationProvider};
 use postgres_core_model::access::{CreationAccessExpression, PrecheckAccessPrimitiveExpression};
 use postgres_core_model::types::{
-    ComputedField, ComputedFieldDependency, PostgresFieldDefaultValue,
-    PostgresPrimitiveTypeKind,
+    ComputedField, ComputedFieldDependency, PostgresFieldDefaultValue, PostgresPrimitiveTypeKind,
 };
 
 use crate::{aggregate_type_builder::aggregate_type_name, shallow::Shallow};
