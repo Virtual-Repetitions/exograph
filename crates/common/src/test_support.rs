@@ -84,12 +84,12 @@ fn relative_path(
     folder_path.join(path)
 }
 
-pub fn read_relative_file(test_path: &PathBuf, path: &str) -> Result<String, std::io::Error> {
+pub fn read_relative_file(test_path: &Path, path: &str) -> Result<String, std::io::Error> {
     std::fs::read_to_string(test_path.join(path))
 }
 
 pub fn assert_file_content(
-    test_path: &PathBuf,
+    test_path: &Path,
     path: &str,
     actual_content: &str,
     test_name: &str,
@@ -102,7 +102,7 @@ pub fn assert_file_content(
             path.replace(".expected.", ".actual.")
         } else {
             // Drop the extension and add ".actual" followed by the extension
-            let extension = path.split('.').last().unwrap();
+            let extension = path.split('.').next_back().unwrap();
             let file_name = path.split('.').next().unwrap();
             format!("{}.actual.{}", file_name, extension)
         }
@@ -111,13 +111,11 @@ pub fn assert_file_content(
 
     let actual_content = actual_content.trim();
 
-    if !compare_strings_ignoring_whitespace(actual_content, &expected_content) {
+    if !compare_strings_ignoring_whitespace(actual_content, expected_content) {
         std::fs::write(actual_file, actual_content).unwrap();
         return Err(format!("{}: {}", "File content mismatch".red(), test_name));
-    } else {
-        if actual_file.exists() {
-            std::fs::remove_file(actual_file).unwrap();
-        }
+    } else if actual_file.exists() {
+        std::fs::remove_file(actual_file).unwrap();
     }
 
     Ok(())
