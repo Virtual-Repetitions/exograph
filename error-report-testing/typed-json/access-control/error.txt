@@ -11,3 +11,4 @@ error[C000]: Cannot use @access for field 'notes' in a type with a '@json' or '@
    | |_________________^
 
 Error: Parser error: Could not process input exo files
+

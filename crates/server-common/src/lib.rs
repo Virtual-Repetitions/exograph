@@ -30,6 +30,11 @@ use system_router::{SystemRouter, create_system_router_from_file};
 pub async fn init(env: Arc<dyn Environment>) -> Result<SystemRouter, ServerInitError> {
     logging_tracing::init(env.as_ref()).await?;
 
+    println!(
+        "Exograph server starting (version {})",
+        env!("CARGO_PKG_VERSION")
+    );
+
     let exo_ir_file = get_exo_ir_file_name();
 
     Ok(create_system_router_from_file(&exo_ir_file, create_static_loaders(), env).await?)
