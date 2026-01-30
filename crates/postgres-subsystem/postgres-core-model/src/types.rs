@@ -80,7 +80,10 @@ pub enum EntityRepresentation {
 
 impl EntityRepresentation {
     pub fn is_json_like(self) -> bool {
-        matches!(self, EntityRepresentation::Json | EntityRepresentation::Computed)
+        matches!(
+            self,
+            EntityRepresentation::Json | EntityRepresentation::Computed
+        )
     }
 }
 

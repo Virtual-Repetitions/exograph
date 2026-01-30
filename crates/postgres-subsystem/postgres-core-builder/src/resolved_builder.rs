@@ -1006,10 +1006,7 @@ fn resolve_composite_type(
         if is_json && is_computed {
             errors.push(Diagnostic {
                 level: Level::Error,
-                message: format!(
-                    "Type '{}' cannot use both @json and @computed",
-                    ct.name
-                ),
+                message: format!("Type '{}' cannot use both @json and @computed", ct.name),
                 code: Some("C000".to_string()),
                 spans: vec![SpanLabel {
                     span: ct.span,
@@ -1175,8 +1172,8 @@ fn resolve_composite_type_fields(
 
         let access_annotation = field.annotations.get("access");
 
-    if is_json_like && access_annotation.is_some() {
-        errors.push(Diagnostic {
+        if is_json_like && access_annotation.is_some() {
+            errors.push(Diagnostic {
             level: Level::Error,
             message: format!(
                 "Cannot use @access for field '{}' in a type with a '@json' or '@computed' annotation",

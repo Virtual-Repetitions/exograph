@@ -108,10 +108,7 @@ fn selection_field_to_json(field: &ValidatedField) -> Result<Value, PostgresExec
     }
 
     if !field.subfields.is_empty() {
-        map.insert(
-            "fields".to_string(),
-            selection_to_json(&field.subfields)?,
-        );
+        map.insert("fields".to_string(), selection_to_json(&field.subfields)?);
     }
 
     Ok(Value::Object(map))

@@ -25,9 +25,7 @@ use postgres_graphql_model::{
 use postgres_core_model::{
     access::DatabaseAccessPrimitiveExpression,
     relation::PostgresRelation,
-    types::{
-        EntityType, PostgresField, PostgresFieldType, PostgresType, TypeIndex, base_type,
-    },
+    types::{EntityType, PostgresField, PostgresFieldType, PostgresType, TypeIndex, base_type},
 };
 
 use crate::utils::{MutationTypeKind, to_mutation_type};

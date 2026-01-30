@@ -12,6 +12,7 @@ use core_model::{
     types::{FieldType, Named},
 };
 use exo_sql::ColumnPathLink;
+use postgres_core_model::relation::PostgresRelation;
 use postgres_core_model::types::{EntityType, PostgresField, PostgresPrimitiveType, TypeIndex};
 use postgres_core_model::{
     predicate::{
@@ -20,7 +21,6 @@ use postgres_core_model::{
     },
     types::PostgresPrimitiveTypeKind,
 };
-use postgres_core_model::relation::PostgresRelation;
 
 use super::system_builder::SystemContextBuilding;
 
