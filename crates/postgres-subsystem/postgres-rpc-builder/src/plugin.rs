@@ -18,7 +18,6 @@ use core_model_builder::error::ModelBuildingError;
 
 use postgres_core_builder::resolved_type::ResolvedType;
 use postgres_core_builder::resolved_type::ResolvedTypeEnv;
-use postgres_core_model::types::EntityRepresentation;
 use postgres_rpc_model::operation::{PostgresOperation, PostgresOperationKind};
 use postgres_rpc_model::subsystem::PostgresRpcSubsystem;
 
@@ -34,7 +33,7 @@ impl PostgresRpcSubsystemBuilder {
 
         for typ in resolved_env.resolved_types.iter() {
             if let ResolvedType::Composite(composite) = typ.1 {
-                if composite.representation == EntityRepresentation::Json {
+                if composite.representation.is_json_like() {
                     continue;
                 }
 

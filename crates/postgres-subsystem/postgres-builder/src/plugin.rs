@@ -105,8 +105,8 @@ impl SubsystemBuilder for PostgresSubsystemBuilder {
             (
                 "computed",
                 AnnotationSpec {
-                    targets: &[AnnotationTarget::Field],
-                    no_params: false,
+                    targets: &[AnnotationTarget::Field, AnnotationTarget::Type],
+                    no_params: true,
                     single_params: false,
                     mapped_params: Some(&[
                         MappedAnnotationParamSpec {

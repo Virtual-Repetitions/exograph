@@ -18,7 +18,7 @@ use postgres_graphql_model::types::MutationType;
 
 use postgres_core_model::{
     relation::PostgresRelation,
-    types::{EntityRepresentation, EntityType, PostgresField},
+    types::{EntityType, PostgresField},
 };
 
 use crate::utils::{MutationTypeKind, to_mutation_type};
@@ -58,7 +58,7 @@ impl Builder for ReferenceInputTypeBuilder {
         building: &mut SystemContextBuilding,
     ) -> Result<(), ModelBuildingError> {
         for (_, entity_type) in building.core_subsystem.entity_types.iter() {
-            if entity_type.representation == EntityRepresentation::Json {
+            if entity_type.representation.is_json_like() {
                 continue;
             }
 
@@ -75,7 +75,7 @@ impl Builder for ReferenceInputTypeBuilder {
     }
 
     fn needs_mutation_type(&self, composite_type: &ResolvedCompositeType) -> bool {
-        composite_type.representation != EntityRepresentation::Json
+        !composite_type.representation.is_json_like()
     }
 }
 

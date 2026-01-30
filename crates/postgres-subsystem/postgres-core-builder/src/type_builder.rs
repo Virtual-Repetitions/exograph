@@ -173,7 +173,7 @@ fn associate_datbase_table(
     resolved_type: &ResolvedCompositeType,
     building: &mut SystemContextBuilding,
 ) -> Result<(), ModelBuildingError> {
-    if resolved_type.representation == EntityRepresentation::Json {
+    if resolved_type.representation.is_json_like() {
         return Ok(());
     }
 
@@ -185,8 +185,8 @@ fn associate_datbase_table(
         .ok_or_else(|| {
             ModelBuildingError::Generic(format!(
                 "Type `{}` expects a backing table named `{}` but it was not registered. \
-                 Ensure the table exists in Postgres or annotate the type with `@json` if it \
-                 represents computed data.",
+                 Ensure the table exists in Postgres or annotate the type with `@json` or \
+                 `@computed` if it represents computed data.",
                 resolved_type.name,
                 resolved_type.table_name.fully_qualified_name()
             ))
@@ -979,7 +979,7 @@ fn create_relation(
 
     match field_base_typ {
         FieldType::List(underlying) => {
-            if self_type.representation == EntityRepresentation::Json {
+            if self_type.representation.is_json_like() {
                 Ok(PostgresRelation::Embedded)
             } else {
                 // Since the field type is a list, the relation depends on the underlying type.
@@ -994,7 +994,7 @@ fn create_relation(
                         "Enum types are not supported in relations".to_string(),
                     )),
                     ResolvedType::Composite(foreign_field_type) => {
-                        if foreign_field_type.representation == EntityRepresentation::Json {
+                        if foreign_field_type.representation.is_json_like() {
                             Ok(PostgresRelation::Scalar {
                                 column_id: column_lookup(field.column_name())?,
                                 is_pk: false,
@@ -1020,7 +1020,7 @@ fn create_relation(
 
             match foreign_resolved_type {
                 ResolvedType::Primitive(_) | ResolvedType::Enum(_) => {
-                    if self_type.representation == EntityRepresentation::Json {
+                    if self_type.representation.is_json_like() {
                         Ok(PostgresRelation::Embedded)
                     } else {
                         let column_id = column_lookup(field.column_name())?;
@@ -1031,11 +1031,11 @@ fn create_relation(
                     }
                 }
                 ResolvedType::Composite(foreign_field_type) => {
-                    if self_type.representation == EntityRepresentation::Json {
+                    if self_type.representation.is_json_like() {
                         return Ok(PostgresRelation::Embedded);
                     }
 
-                    if foreign_field_type.representation == EntityRepresentation::Json {
+                    if foreign_field_type.representation.is_json_like() {
                         Ok(PostgresRelation::Scalar {
                             column_id: column_lookup(field.column_name())?,
                             is_pk: field.is_pk,

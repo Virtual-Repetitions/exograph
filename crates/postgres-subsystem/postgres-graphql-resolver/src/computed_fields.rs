@@ -10,12 +10,12 @@ use deno_graphql_resolver::{
 };
 use exo_deno::Arg;
 use exo_sql::AbstractPredicate;
-use serde_json::{Value, map::Entry as JsonEntry};
+use serde_json::{Map as JsonMap, Value, map::Entry as JsonEntry};
 
 use crate::resolver::PostgresSubsystemResolver;
 use postgres_core_model::relation::PostgresRelation;
 use postgres_core_model::types::{
-    ComputedField, EntityRepresentation, EntityType, PostgresField, PostgresFieldType, TypeIndex,
+    ComputedField, EntityType, PostgresField, PostgresFieldType, TypeIndex,
 };
 use postgres_core_resolver::postgres_execution_error::PostgresExecutionError;
 
@@ -84,6 +84,37 @@ pub async fn apply_computed_fields_to_body(
     *body = QueryResponseBody::Raw(Some(updated));
 
     Ok(())
+}
+
+fn selection_to_json(selection: &[ValidatedField]) -> Result<Value, PostgresExecutionError> {
+    let mut fields = Vec::with_capacity(selection.len());
+    for field in selection {
+        fields.push(selection_field_to_json(field)?);
+    }
+    Ok(Value::Array(fields))
+}
+
+fn selection_field_to_json(field: &ValidatedField) -> Result<Value, PostgresExecutionError> {
+    let mut map = JsonMap::new();
+    map.insert("name".to_string(), Value::String(field.name.to_string()));
+    map.insert("outputName".to_string(), Value::String(field.output_name()));
+
+    if let Some(alias) = &field.alias {
+        map.insert("alias".to_string(), Value::String(alias.to_string()));
+    }
+
+    if !field.arguments.is_empty() {
+        map.insert("arguments".to_string(), args_to_json(&field.arguments)?);
+    }
+
+    if !field.subfields.is_empty() {
+        map.insert(
+            "fields".to_string(),
+            selection_to_json(&field.subfields)?,
+        );
+    }
+
+    Ok(Value::Object(map))
 }
 
 #[async_recursion]
@@ -253,7 +284,7 @@ async fn process_entity(
         }
     }
 
-    if entity_type.representation == EntityRepresentation::Json {
+    if entity_type.representation.is_json_like() {
         obj.retain(|key, _| projected_keys.iter().any(|allowed| allowed == key));
     }
 
@@ -307,6 +338,7 @@ async fn execute_computed_field(
         })?;
 
     let args_value = args_to_json(&selection_field.arguments)?;
+    let selection_value = selection_to_json(&selection_field.subfields)?;
 
     let exograph_execute_query =
         core_resolver::exograph_execute_query!(system_resolver, request_context);
@@ -315,7 +347,11 @@ async fn execute_computed_field(
         exograph_proceed: None,
     };
 
-    let arg_sequence = vec![Arg::Serde(parent_snapshot.clone()), Arg::Serde(args_value)];
+    let arg_sequence = vec![
+        Arg::Serde(parent_snapshot.clone()),
+        Arg::Serde(args_value),
+        Arg::Serde(selection_value),
+    ];
 
     deno_resolver
         .executor
@@ -365,7 +401,7 @@ fn needs_postprocess(
     selection: &[ValidatedField],
     subsystem_resolver: &PostgresSubsystemResolver,
 ) -> bool {
-    if entity_type.representation == EntityRepresentation::Json && !selection.is_empty() {
+    if entity_type.representation.is_json_like() && !selection.is_empty() {
         return true;
     }
 

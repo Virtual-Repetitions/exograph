@@ -109,7 +109,7 @@ fn expand_database_info(
     resolved_env: &ResolvedTypeEnv,
     building: &mut DatabaseBuilding,
 ) -> Result<(), ModelBuildingError> {
-    if resolved_type.representation == EntityRepresentation::Json {
+    if resolved_type.representation.is_json_like() {
         return Ok(());
     }
 
@@ -200,7 +200,7 @@ fn expand_type_relations(
     resolved_env: &ResolvedTypeEnv,
     building: &mut DatabaseBuilding,
 ) -> Result<(), ModelBuildingError> {
-    if resolved_type.representation == EntityRepresentation::Json {
+    if resolved_type.representation.is_json_like() {
         return Ok(());
     }
 
@@ -227,14 +227,14 @@ fn expand_type_relations(
                 .ok_or_else(|| {
                     ModelBuildingError::Generic(format!(
                         "The field `{}.{}` references type `{}` which is not registered in the Postgres subsystem. \
-                         Ensure this type is defined, imported, or marked with `@json` if it represents computed data.",
+                         Ensure this type is defined, imported, or marked with `@json` or `@computed` if it represents computed data.",
                         resolved_type.name,
                         field.name,
                         field.typ.innermost().type_name
                     ))
                 })?;
             if let ResolvedType::Composite(ct) = field_type
-                && ct.representation == EntityRepresentation::Json
+                && ct.representation.is_json_like()
             {
                 return Ok(());
             }
@@ -492,9 +492,7 @@ fn create_columns(
                                     PhysicalColumn {
                                         table_id,
                                         name: column_name.to_string(),
-                                        typ: if composite.representation
-                                            == EntityRepresentation::Json
-                                        {
+                                        typ: if composite.representation.is_json_like() {
                                             Box::new(JsonColumnType)
                                         } else {
                                             // A placeholder value. Will be resolved in the next phase (see expand_type_relations)

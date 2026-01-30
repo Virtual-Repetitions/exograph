@@ -990,7 +990,7 @@ dependencies = [
 
 [[package]]
 name = "builder"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "cc",
  "codemap",
@@ -1251,9 +1251,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.54"
+version = "1.2.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6354c81bbfd62d9cfa9cb3c773c2b7b2a3a482d569de977fd0e961f6e7c00583"
+checksum = "47b26a0954ae34af09b50f0de26458fa95369a0d478d8236d3f93082b219bd29"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -1325,9 +1325,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.55"
+version = "4.5.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e34525d5bbbd55da2bb745d34b36121baac88d07619a9a09cfcf4a6c0832785"
+checksum = "a75ca66430e33a14957acc24c5077b503e7d374151b2b4b3a10c83b4ceb4be0e"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -1335,9 +1335,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.55"
+version = "4.5.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59a20016a20a3da95bef50ec7238dbd09baeef4311dcdd38ec15aba69812fb61"
+checksum = "793207c7fa6300a0608d1080b858e5fdbe713cdc1c8db9fb17777d8a13e63df0"
 dependencies = [
  "anstream",
  "anstyle",
@@ -1365,7 +1365,7 @@ checksum = "c3e64b0cc0439b12df2fa678eae89a1c56a529fd067a9115f7827f1fffd22b32"
 
 [[package]]
 name = "cli"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "anyhow",
  "async-recursion",
@@ -1518,7 +1518,7 @@ checksum = "55b672471b4e9f9e95499ea597ff64941a309b2cdbffcc46f2cc5e2d971fd335"
 
 [[package]]
 name = "common"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "anyhow",
  "async-graphql-value",
@@ -1713,7 +1713,7 @@ dependencies = [
 
 [[package]]
 name = "core-model"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-graphql-parser",
  "async-graphql-value",
@@ -1724,7 +1724,7 @@ dependencies = [
 
 [[package]]
 name = "core-model-builder"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "codemap",
  "codemap-diagnostic",
@@ -1736,7 +1736,7 @@ dependencies = [
 
 [[package]]
 name = "core-plugin-interface"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-trait",
  "built",
@@ -1750,7 +1750,7 @@ dependencies = [
 
 [[package]]
 name = "core-plugin-shared"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "base16ct 0.3.0",
  "bincode 2.0.1",
@@ -1767,7 +1767,7 @@ dependencies = [
 
 [[package]]
 name = "core-resolver"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-graphql-parser",
  "async-graphql-value",
@@ -1799,11 +1799,11 @@ dependencies = [
 
 [[package]]
 name = "core-rest-model"
-version = "0.29.3"
+version = "0.29.4"
 
 [[package]]
 name = "core-router"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "core-plugin-interface",
  "core-plugin-shared",
@@ -2365,7 +2365,7 @@ checksum = "26bf8fc351c5ed29b5c2f0cbbac1b209b74f60ecd62e675a998df72c49af5204"
 
 [[package]]
 name = "deno-builder"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-trait",
  "core-model-builder",
@@ -2376,7 +2376,7 @@ dependencies = [
 
 [[package]]
 name = "deno-graphql-builder"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-trait",
  "codemap",
@@ -2395,7 +2395,7 @@ dependencies = [
 
 [[package]]
 name = "deno-graphql-model"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-graphql-parser",
  "bincode 2.0.1",
@@ -2407,7 +2407,7 @@ dependencies = [
 
 [[package]]
 name = "deno-graphql-resolver"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "anyhow",
  "async-graphql-parser",
@@ -2432,7 +2432,7 @@ dependencies = [
 
 [[package]]
 name = "deno-resolver"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-trait",
  "core-plugin-interface",
@@ -4268,7 +4268,7 @@ checksum = "31ae425815400e5ed474178a7a22e275a9687086a12ca63ec793ff292d8fdae8"
 
 [[package]]
 name = "exo-deno"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-trait",
  "ctor",
@@ -4294,7 +4294,7 @@ dependencies = [
 
 [[package]]
 name = "exo-env"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "dotenvy",
  "thiserror 2.0.18",
@@ -4302,7 +4302,7 @@ dependencies = [
 
 [[package]]
 name = "exo-sql"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "bincode 2.0.1",
  "bytes",
@@ -4344,7 +4344,7 @@ dependencies = [
 
 [[package]]
 name = "exo-wasm"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -4483,9 +4483,9 @@ dependencies = [
 
 [[package]]
 name = "find-msvc-tools"
-version = "0.1.8"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8591b0bcc8a98a64310a2fae1bb3e9b8564dd10e381e6e28010fde8e8e8568db"
+checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
 name = "fixedbitset"
@@ -4922,7 +4922,7 @@ dependencies = [
 
 [[package]]
 name = "graphql-router"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-graphql-parser",
  "async-stream",
@@ -5774,7 +5774,7 @@ dependencies = [
 
 [[package]]
 name = "introspection-resolver"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-graphql-parser",
  "async-graphql-value",
@@ -5789,7 +5789,7 @@ dependencies = [
 
 [[package]]
 name = "introspection-util"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "anyhow",
  "ctor",
@@ -6326,7 +6326,7 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "lsp"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "anyhow",
  "builder",
@@ -6417,7 +6417,7 @@ checksum = "4facc753ae494aeb6e3c22f839b158aebd4f9270f55cd3c79906c45476c47ab4"
 
 [[package]]
 name = "mcp-bridge"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "anyhow",
  "clap",
@@ -6431,7 +6431,7 @@ dependencies = [
 
 [[package]]
 name = "mcp-router"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-graphql-parser",
  "async-stream",
@@ -7557,7 +7557,7 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
 name = "playground-router"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-trait",
  "common",
@@ -7639,7 +7639,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-builder"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-trait",
  "builder",
@@ -7660,7 +7660,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-builder-dynamic"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "core-plugin-interface",
  "postgres-builder",
@@ -7668,7 +7668,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-core-builder"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "builder",
  "codemap",
@@ -7697,7 +7697,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-core-model"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "bincode 2.0.1",
  "builder",
@@ -7717,7 +7717,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-core-resolver"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -7741,7 +7741,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-graphql-builder"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "core-model",
  "core-model-builder",
@@ -7755,7 +7755,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-graphql-model"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-graphql-parser",
  "async-graphql-value",
@@ -7770,7 +7770,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-graphql-resolver"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-graphql-parser",
  "async-graphql-value",
@@ -7820,7 +7820,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-resolver"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-trait",
  "common",
@@ -7842,7 +7842,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-resolver-dynamic"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "core-plugin-interface",
  "postgres-resolver",
@@ -7850,7 +7850,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-rest-builder"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "core-model-builder",
  "core-plugin-shared",
@@ -7861,7 +7861,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-rest-model"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "bincode 2.0.1",
  "common",
@@ -7877,7 +7877,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-rest-resolver"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-trait",
  "common",
@@ -7890,7 +7890,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-rpc-builder"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "core-model-builder",
  "core-plugin-shared",
@@ -7901,7 +7901,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-rpc-model"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "bincode 2.0.1",
  "core-model",
@@ -7913,7 +7913,7 @@ dependencies = [
 
 [[package]]
 name = "postgres-rpc-resolver"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-trait",
  "common",
@@ -8493,7 +8493,7 @@ checksum = "1e061d1b48cb8d38042de4ae0a7a6401009d6143dc80d2e2d6f31f0bdd6470c7"
 
 [[package]]
 name = "rest-router"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-trait",
  "common",
@@ -8563,7 +8563,7 @@ dependencies = [
 
 [[package]]
 name = "rpc-router"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -9181,7 +9181,7 @@ dependencies = [
 
 [[package]]
 name = "server-actix"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "actix-web",
  "common",
@@ -9199,7 +9199,7 @@ dependencies = [
 
 [[package]]
 name = "server-aws-lambda"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "builder",
  "common",
@@ -9220,7 +9220,7 @@ dependencies = [
 
 [[package]]
 name = "server-cf-worker"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "common",
  "console_error_panic_hook",
@@ -9245,7 +9245,7 @@ dependencies = [
 
 [[package]]
 name = "server-common"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "common",
  "core-plugin-interface",
@@ -9667,7 +9667,7 @@ dependencies = [
 
 [[package]]
 name = "subsystem-model-builder-util"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-trait",
  "builder",
@@ -9684,7 +9684,7 @@ dependencies = [
 
 [[package]]
 name = "subsystem-model-util"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-graphql-parser",
  "core-model",
@@ -10171,7 +10171,7 @@ dependencies = [
 
 [[package]]
 name = "system-router"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-trait",
  "common",
@@ -10272,7 +10272,7 @@ dependencies = [
 
 [[package]]
 name = "testing"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "anyhow",
  "async-graphql-parser",
@@ -11486,7 +11486,7 @@ checksum = "a8145dd1593bf0fb137dbfa85b8be79ec560a447298955877804640e40c2d6ea"
 
 [[package]]
 name = "wasm-builder"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-trait",
  "core-model-builder",
@@ -11497,7 +11497,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-builder-dynamic"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "core-plugin-interface",
  "wasm-builder",
@@ -11546,7 +11546,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-graphql-builder"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-trait",
  "core-model",
@@ -11559,7 +11559,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-graphql-model"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-graphql-parser",
  "bincode 2.0.1",
@@ -11571,7 +11571,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-graphql-resolver"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-graphql-parser",
  "async-trait",
@@ -11587,7 +11587,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-resolver"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "async-trait",
  "core-plugin-interface",
@@ -11601,7 +11601,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-resolver-dynamic"
-version = "0.29.3"
+version = "0.29.4"
 dependencies = [
  "core-plugin-interface",
  "wasm-resolver",
@@ -12894,18 +12894,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.35"
+version = "0.8.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fdea86ddd5568519879b8187e1cf04e24fce28f7fe046ceecbce472ff19a2572"
+checksum = "7456cf00f0685ad319c5b1693f291a650eaf345e941d082fc4e03df8a03996ac"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.35"
+version = "0.8.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c15e1b46eff7c6c91195752e0eeed8ef040e391cdece7c25376957d5f15df22"
+checksum = "1328722bbf2115db7e19d69ebcc15e795719e2d66b60827c6a69a117365e37a0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -13074,9 +13074,9 @@ checksum = "cb8a0807f7c01457d0379ba880ba6322660448ddebc890ce29bb64da71fb40f9"
 
 [[package]]
 name = "zune-jpeg"
-version = "0.5.11"
+version = "0.5.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2959ca473aae96a14ecedf501d20b3608d2825ba280d5adb57d651721885b0c2"
+checksum = "410e9ecef634c709e3831c2cfdb8d9c32164fae1c67496d5b68fff728eec37fe"
 dependencies = [
  "zune-core",
 ]

@@ -9,7 +9,6 @@
 
 use core_model_builder::error::ModelBuildingError;
 use postgres_core_builder::resolved_type::{ResolvedCompositeType, ResolvedType, ResolvedTypeEnv};
-use postgres_core_model::types::EntityRepresentation;
 
 use super::naming::ToPostgresQueryName;
 use super::system_builder::SystemContextBuilding;
@@ -20,7 +19,7 @@ pub(super) fn build_expanded(
 ) -> Result<(), ModelBuildingError> {
     for (_, resolved_type) in resolved_env.resolved_types.iter() {
         if let ResolvedType::Composite(c) = &resolved_type {
-            if c.representation == EntityRepresentation::Json {
+            if c.representation.is_json_like() {
                 continue;
             }
             expand_query_mutation_map(c, building);
