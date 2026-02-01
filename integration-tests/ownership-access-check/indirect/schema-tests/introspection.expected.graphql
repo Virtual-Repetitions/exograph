@@ -39,7 +39,7 @@ input ProjectFilter {
   id: UuidFilter
   name: StringFilter
   owner: UserFilter
-  questions: QuestionFilter
+  questions: QuestionSomeFilter
   and: [ProjectFilter!]
   or: [ProjectFilter!]
   not: ProjectFilter
@@ -53,6 +53,22 @@ input ProjectOrdering {
 
 input ProjectReferenceInput {
   id: Uuid!
+}
+
+"""
+Predicate for the `Project` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input ProjectSomeFilter {
+  some: ProjectFilter
+  id: UuidFilter
+  name: StringFilter
+  owner: UserFilter
+  questions: QuestionSomeFilter
+  and: [ProjectFilter!]
+  or: [ProjectFilter!]
+  not: ProjectFilter
 }
 
 input ProjectUpdateInput {
@@ -121,6 +137,21 @@ input QuestionReferenceInput {
   id: Uuid!
 }
 
+"""
+Predicate for the `Question` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input QuestionSomeFilter {
+  some: QuestionFilter
+  id: UuidFilter
+  text: StringFilter
+  project: ProjectFilter
+  and: [QuestionFilter!]
+  or: [QuestionFilter!]
+  not: QuestionFilter
+}
+
 input QuestionUpdateInput {
   id: Uuid
   text: String
@@ -184,7 +215,7 @@ To check a field against null, use a `<field name>: null` filter
 input UserFilter {
   id: UuidFilter
   name: StringFilter
-  projects: ProjectFilter
+  projects: ProjectSomeFilter
   and: [UserFilter!]
   or: [UserFilter!]
   not: UserFilter
@@ -214,7 +245,7 @@ type UuidAgg {
 input UuidFilter {
   eq: Uuid
   neq: Uuid
-  in: [Uuid]
+  in: [Uuid!]
 }
 
 type Query {

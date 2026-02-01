@@ -35,20 +35,22 @@ pub async fn resolve_operation<'e>(
         return_type,
     } = resolved_operation;
 
-    let mut tx = request_context
-        .system_context
-        .transaction_holder
-        .try_lock()
-        .unwrap();
+    let result = {
+        let mut tx = request_context
+            .system_context
+            .transaction_holder
+            .try_lock()
+            .unwrap();
 
-    let result = subsystem_resolver
-        .executor
-        .execute(
-            operation,
-            &mut tx,
-            &subsystem_resolver.subsystem.core_subsystem.database,
-        )
-        .await;
+        subsystem_resolver
+            .executor
+            .execute(
+                operation,
+                &mut tx,
+                &subsystem_resolver.subsystem.core_subsystem.database,
+            )
+            .await
+    };
 
     if let Err(DatabaseError::Precheck(_)) = result {
         return Err(PostgresExecutionError::Authorization);

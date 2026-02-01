@@ -25,7 +25,8 @@ export function exograph_version() {
 //
 globalThis.ExographExtension = ({
     executeQuery: async function (query_string, variables) {
-        const result = await op_exograph_execute_query(query_string, variables);
+        const normalizedVars = variables === undefined ? null : variables;
+        const result = await op_exograph_execute_query(query_string, normalizedVars);
         return result;
     },
 
@@ -34,7 +35,9 @@ globalThis.ExographExtension = ({
     },
 
     executeQueryPriv: async function (query_string, variables, context_override) {
-        const result = await op_exograph_execute_query_priv(query_string, variables, context_override);
+        const normalizedVars = variables === undefined ? null : variables;
+        const normalizedContext = context_override === undefined ? null : context_override;
+        const result = await op_exograph_execute_query_priv(query_string, normalizedVars, normalizedContext);
         return result;
     },
 })

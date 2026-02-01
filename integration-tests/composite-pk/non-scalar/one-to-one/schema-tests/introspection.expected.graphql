@@ -62,6 +62,20 @@ input ProfileReferenceInput {
   user: UserReferenceInput!
 }
 
+"""
+Predicate for the `Profile` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input ProfileSomeFilter {
+  some: ProfileFilter
+  user: UserFilter
+  name: StringFilter
+  and: [ProfileFilter!]
+  or: [ProfileFilter!]
+  not: ProfileFilter
+}
+
 input ProfileUpdateInput {
   user: UserReferenceInput
   name: String
@@ -126,7 +140,7 @@ input UserFilter {
   orgId: IntFilter
   email: StringFilter
   phone: StringFilter
-  profile: ProfileFilter
+  profile: ProfileSomeFilter
   and: [UserFilter!]
   or: [UserFilter!]
   not: UserFilter

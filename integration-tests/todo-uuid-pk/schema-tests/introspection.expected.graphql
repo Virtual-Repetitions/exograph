@@ -84,6 +84,22 @@ input TodoReferenceInput {
   id: Uuid!
 }
 
+"""
+Predicate for the `Todo` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input TodoSomeFilter {
+  some: TodoFilter
+  id: UuidFilter
+  title: StringFilter
+  completed: BooleanFilter
+  user: UserFilter
+  and: [TodoFilter!]
+  or: [TodoFilter!]
+  not: TodoFilter
+}
+
 input TodoUpdateInput {
   id: Uuid
   title: String
@@ -146,7 +162,7 @@ input UserFilter {
   lastName: StringFilter
   profileImageUrl: StringFilter
   role: StringFilter
-  todos: TodoFilter
+  todos: TodoSomeFilter
   and: [UserFilter!]
   or: [UserFilter!]
   not: UserFilter
@@ -184,7 +200,7 @@ type UuidAgg {
 input UuidFilter {
   eq: Uuid
   neq: Uuid
-  in: [Uuid]
+  in: [Uuid!]
 }
 
 type Query {

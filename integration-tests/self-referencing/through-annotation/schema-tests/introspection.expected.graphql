@@ -24,7 +24,7 @@ To check a field against null, use a `<field name>: null` filter
 input CompanyFilter {
   id: IntFilter
   name: StringFilter
-  employees: EmployeeFilter
+  employees: EmployeeSomeFilter
   and: [CompanyFilter!]
   or: [CompanyFilter!]
   not: CompanyFilter
@@ -93,6 +93,22 @@ input EmployeeOrdering {
 
 input EmployeeReferenceInput {
   id: Int!
+}
+
+"""
+Predicate for the `Employee` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input EmployeeSomeFilter {
+  some: EmployeeFilter
+  id: IntFilter
+  name: StringFilter
+  company: CompanyFilter
+  manager: EmployeeFilter
+  and: [EmployeeFilter!]
+  or: [EmployeeFilter!]
+  not: EmployeeFilter
 }
 
 input EmployeeUpdateInput {

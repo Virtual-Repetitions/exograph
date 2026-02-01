@@ -33,7 +33,7 @@ input AddressFilter {
   city: StringFilter
   state: StringFilter
   zip: IntFilter
-  people: PersonFilter
+  people: PersonSomeFilter
   and: [AddressFilter!]
   or: [AddressFilter!]
   not: AddressFilter
@@ -135,6 +135,22 @@ input PersonOrdering {
 input PersonReferenceInput {
   firstName: String!
   lastName: String!
+}
+
+"""
+Predicate for the `Person` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input PersonSomeFilter {
+  some: PersonFilter
+  firstName: StringFilter
+  lastName: StringFilter
+  age: IntFilter
+  address: AddressFilter
+  and: [PersonFilter!]
+  or: [PersonFilter!]
+  not: PersonFilter
 }
 
 input PersonUpdateInput {

@@ -85,7 +85,7 @@ type UuidAgg {
 input UuidFilter {
   eq: Uuid
   neq: Uuid
-  in: [Uuid]
+  in: [Uuid!]
 }
 
 type Query {

@@ -29,7 +29,7 @@ input MemberFilter {
   memberId: StringFilter
   memberTenantId: StringFilter
   memberName: StringFilter
-  memberships: MembershipFilter
+  memberships: MembershipSomeFilter
   and: [MemberFilter!]
   or: [MemberFilter!]
   not: MemberFilter
@@ -105,6 +105,22 @@ input MembershipOrdering {
 input MembershipReferenceInput {
   membershipId: String!
   membershipTenantId: String!
+}
+
+"""
+Predicate for the `Membership` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input MembershipSomeFilter {
+  some: MembershipFilter
+  membershipId: StringFilter
+  membershipTenantId: StringFilter
+  member: MemberFilter
+  membershipName: StringFilter
+  and: [MembershipFilter!]
+  or: [MembershipFilter!]
+  not: MembershipFilter
 }
 
 input MembershipUpdateInput {

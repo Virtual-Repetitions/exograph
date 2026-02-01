@@ -24,7 +24,7 @@ To check a field against null, use a `<field name>: null` filter
 input EventFilter {
   id: IntFilter
   title: StringFilter
-  notifications: NotificationFilter
+  notifications: NotificationSomeFilter
   and: [EventFilter!]
   or: [EventFilter!]
   not: EventFilter
@@ -111,6 +111,22 @@ input NotificationOrdering {
 
 input NotificationReferenceInput {
   id: Int!
+}
+
+"""
+Predicate for the `Notification` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input NotificationSomeFilter {
+  some: NotificationFilter
+  id: IntFilter
+  title: StringFilter
+  description: StringFilter
+  event: EventFilter
+  and: [NotificationFilter!]
+  or: [NotificationFilter!]
+  not: NotificationFilter
 }
 
 input NotificationUpdateInput {

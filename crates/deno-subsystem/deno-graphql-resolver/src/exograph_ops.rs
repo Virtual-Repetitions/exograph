@@ -34,6 +34,33 @@ pub async fn op_exograph_execute_query_helper(
     variables: Option<Value>,
     context_override: Value,
 ) -> Result<Value, DenoExecutionError> {
+    let query_str = query_string.as_str().ok_or_else(|| {
+        DenoExecutionError::Explicit(format!(
+            "executeQuery expects query_string to be a string, got {}",
+            query_string
+        ))
+    })?;
+    let variables = match variables {
+        Some(Value::Object(obj)) => Some(obj),
+        Some(other) => {
+            return Err(DenoExecutionError::Explicit(format!(
+                "executeQuery expects variables to be an object, got {}",
+                other
+            )));
+        }
+        None => None,
+    };
+    let context_override = match context_override {
+        Value::Null => Value::Null,
+        Value::Object(_) => context_override,
+        other => {
+            return Err(DenoExecutionError::Explicit(format!(
+                "executeQuery expects context_override to be an object or null, got {}",
+                other
+            )));
+        }
+    };
+
     let (response_sender, response_receiver) = tokio::sync::oneshot::channel();
 
     let sender = {
@@ -43,8 +70,8 @@ pub async fn op_exograph_execute_query_helper(
 
     sender
         .send(RequestFromDenoMessage::ExographExecute {
-            query_string: query_string.as_str().unwrap().to_string(),
-            variables: variables.as_ref().map(|o| o.as_object().unwrap().clone()),
+            query_string: query_str.to_string(),
+            variables,
             context_override,
             response_sender,
         })

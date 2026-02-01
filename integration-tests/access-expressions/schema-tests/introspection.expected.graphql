@@ -119,6 +119,21 @@ input AdminNoteReferenceInput {
   id: Int!
 }
 
+"""
+Predicate for the `AdminNote` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input AdminNoteSomeFilter {
+  some: AdminNoteFilter
+  id: IntFilter
+  content: StringFilter
+  user: UserFilter
+  and: [AdminNoteFilter!]
+  or: [AdminNoteFilter!]
+  not: AdminNoteFilter
+}
+
 input AdminNoteUpdateInput {
   id: Int
   content: String
@@ -333,6 +348,21 @@ input MembershipReferenceInput {
   id: Int!
 }
 
+"""
+Predicate for the `Membership` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input MembershipSomeFilter {
+  some: MembershipFilter
+  id: IntFilter
+  kind: StringFilter
+  user: UserFilter
+  and: [MembershipFilter!]
+  or: [MembershipFilter!]
+  not: MembershipFilter
+}
+
 input MembershipUpdateInput {
   id: Int
   kind: String
@@ -440,8 +470,8 @@ To check a field against null, use a `<field name>: null` filter
 input UserFilter {
   id: IntFilter
   name: StringFilter
-  membership: MembershipFilter
-  notes: AdminNoteFilter
+  membership: MembershipSomeFilter
+  notes: AdminNoteSomeFilter
   and: [UserFilter!]
   or: [UserFilter!]
   not: UserFilter

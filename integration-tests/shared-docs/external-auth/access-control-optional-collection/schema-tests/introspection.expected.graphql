@@ -33,7 +33,7 @@ To check a field against null, use a `<field name>: null` filter
 input DocumentFilter {
   id: IntFilter
   content: StringFilter
-  documentUsers: DocumentUserFilter
+  documentUsers: DocumentUserSomeFilter
   and: [DocumentFilter!]
   or: [DocumentFilter!]
   not: DocumentFilter
@@ -109,6 +109,23 @@ input DocumentUserOrdering {
 
 input DocumentUserReferenceInput {
   id: Int!
+}
+
+"""
+Predicate for the `DocumentUser` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input DocumentUserSomeFilter {
+  some: DocumentUserFilter
+  id: IntFilter
+  document: DocumentFilter
+  userId: StringFilter
+  read: BooleanFilter
+  write: BooleanFilter
+  and: [DocumentUserFilter!]
+  or: [DocumentUserFilter!]
+  not: DocumentUserFilter
 }
 
 input DocumentUserUpdateInput {

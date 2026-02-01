@@ -28,7 +28,7 @@ input EmployeeFilter {
   id: IntFilter
   name: StringFilter
   position: StringFilter
-  issues: IssueFilter
+  issues: IssueSomeFilter
   and: [EmployeeFilter!]
   or: [EmployeeFilter!]
   not: EmployeeFilter
@@ -111,6 +111,21 @@ input IssueOrdering {
 
 input IssueReferenceInput {
   id: Int!
+}
+
+"""
+Predicate for the `Issue` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input IssueSomeFilter {
+  some: IssueFilter
+  id: IntFilter
+  title: StringFilter
+  assignee: EmployeeFilter
+  and: [IssueFilter!]
+  or: [IssueFilter!]
+  not: IssueFilter
 }
 
 input IssueUpdateInput {

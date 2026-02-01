@@ -134,6 +134,17 @@ pub fn build_shallow(types: &MappedArena<ResolvedType>, building: &mut SystemCon
                         .predicate_types
                         .add(&shallow_type.name.clone(), shallow_type);
                 }
+                // Some filter type (for one-to-many relation filters)
+                {
+                    let shallow_type = PredicateParameterType {
+                        name: get_some_filter_type_name(&c.name),
+                        kind: PredicateParameterTypeKind::ImplicitEqual, // Will be set to the correct value in expand_type
+                        underlying_type: None,
+                    };
+                    building
+                        .predicate_types
+                        .add(&shallow_type.name.clone(), shallow_type);
+                }
                 // Unique filter type
                 {
                     let shallow_type = PredicateParameterType {
@@ -178,16 +189,26 @@ pub fn build_expanded(resolved_env: &ResolvedTypeEnv, building: &mut SystemConte
             continue;
         }
 
+        let resolved_type = resolved_env
+            .resolved_types
+            .get_by_key(&entity_type.name)
+            .unwrap();
+
         {
             let param_type_name = get_filter_type_name(&entity_type.name);
             let existing_param_id = building.predicate_types.get_id(&param_type_name);
 
-            let resolved_type = resolved_env
-                .resolved_types
-                .get_by_key(&entity_type.name)
-                .unwrap();
-
             let new_kind = expand_entity_type(resolved_type, entity_type, building);
+            let param_type = &mut building.predicate_types[existing_param_id.unwrap()];
+            param_type.kind = new_kind;
+            param_type.underlying_type = Some(entity_type_id);
+        }
+
+        {
+            let param_type_name = get_some_filter_type_name(&entity_type.name);
+            let existing_param_id = building.predicate_types.get_id(&param_type_name);
+            let new_kind = expand_some_filter_type(resolved_type, entity_type, building);
+
             let param_type = &mut building.predicate_types[existing_param_id.unwrap()];
             param_type.kind = new_kind;
             param_type.underlying_type = Some(entity_type_id);
@@ -215,6 +236,10 @@ pub fn get_unique_filter_type_name(type_name: &str) -> String {
 
 pub fn get_array_filter_type_name(type_name: &str) -> String {
     format!("{type_name}ArrayFilter")
+}
+
+pub fn get_some_filter_type_name(type_name: &str) -> String {
+    format!("{type_name}SomeFilter")
 }
 
 fn expand_primitive_type(
@@ -293,6 +318,11 @@ fn expand_entity_type(
                 && matches!(field.typ.base_type(), FieldType::List(_))
             {
                 get_array_filter_type_name(field.typ.name())
+            } else if matches!(
+                field.relation,
+                PostgresRelation::OneToMany(_) | PostgresRelation::Transitive(_)
+            ) {
+                get_some_filter_type_name(field.typ.name())
             } else {
                 get_filter_type_name(field.typ.name())
             };
@@ -368,6 +398,49 @@ fn expand_entity_type(
             }
         })
         .collect();
+
+    PredicateParameterTypeKind::Composite {
+        field_params,
+        logical_op_params,
+    }
+}
+
+fn expand_some_filter_type(
+    resolved_type: &ResolvedType,
+    entity_type: &EntityType,
+    building: &SystemContextBuilding,
+) -> PredicateParameterTypeKind {
+    let (mut field_params, logical_op_params) =
+        match expand_entity_type(resolved_type, entity_type, building) {
+            PredicateParameterTypeKind::Composite {
+                field_params,
+                logical_op_params,
+            } => (field_params, logical_op_params),
+            other => return other,
+        };
+
+    let param_type_name = get_filter_type_name(&entity_type.name);
+    let param_type_id = building
+        .predicate_types
+        .get_id(&param_type_name)
+        .unwrap_or_else(|| panic!("Could not find predicate type '{param_type_name}'"));
+
+    let param_type =
+        FieldType::Optional(Box::new(FieldType::Plain(PredicateParameterTypeWrapper {
+            name: param_type_name,
+            type_id: param_type_id,
+        })));
+
+    field_params.insert(
+        0,
+        PredicateParameter {
+            name: "some".to_string(),
+            typ: param_type,
+            column_path_link: None,
+            access: None,
+            vector_distance_function: None,
+        },
+    );
 
     PredicateParameterTypeKind::Composite {
         field_params,

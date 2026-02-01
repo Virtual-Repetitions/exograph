@@ -64,6 +64,23 @@ input ConcertReferenceInput {
   id: Int!
 }
 
+"""
+Predicate for the `Concert` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input ConcertSomeFilter {
+  some: ConcertFilter
+  id: IntFilter
+  title: StringFilter
+  venue: VenueFilter
+  published: BooleanFilter
+  price: DecimalFilter
+  and: [ConcertFilter!]
+  or: [ConcertFilter!]
+  not: ConcertFilter
+}
+
 input ConcertUpdateInput {
   id: Int
   title: String
@@ -194,7 +211,7 @@ To check a field against null, use a `<field name>: null` filter
 input VenueFilter {
   id: IntFilter
   name: StringFilter
-  concerts: ConcertFilter
+  concerts: ConcertSomeFilter
   published: BooleanFilter
   latitude: FloatFilter
   and: [VenueFilter!]

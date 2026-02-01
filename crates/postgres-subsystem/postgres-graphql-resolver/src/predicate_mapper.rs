@@ -408,8 +408,7 @@ impl<'a> SQLMapper<'a, AbstractPredicate> for PredicateParamInput<'a> {
                                         &self.parent_column_path,
                                         subsystem,
                                         parameter.name.as_str() == "in",
-                                    )
-                                    .expect("Could not get operands");
+                                    )?;
 
                                     Ok(predicate_from_name(
                                         &parameter.name,
