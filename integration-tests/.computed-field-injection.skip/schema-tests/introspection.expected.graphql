@@ -1,0 +1,369 @@
+type BooleanAgg {
+  count: Int
+}
+
+input BooleanFilter {
+  eq: Boolean
+  neq: Boolean
+}
+
+type IntAgg {
+  min: Int
+  max: Int
+  sum: Int
+  avg: Float
+  count: Int
+}
+
+input IntFilter {
+  eq: Int
+  neq: Int
+  lt: Int
+  lte: Int
+  gt: Int
+  gte: Int
+}
+
+enum Ordering {
+  ASC
+  DESC
+}
+
+type StringAgg {
+  min: String
+  max: String
+  count: Int
+}
+
+input StringFilter {
+  eq: String
+  neq: String
+  lt: String
+  lte: String
+  gt: String
+  gte: String
+  like: String
+  ilike: String
+  startsWith: String
+  endsWith: String
+}
+
+type Tag {
+  id: Int!
+  name: String!
+  trainingTags(where: TrainingTagFilter, orderBy: [TrainingTagOrdering!], limit: Int, offset: Int): [TrainingTag!]
+  trainingTagsAgg(where: TrainingTagFilter): TrainingTagAgg
+}
+
+"""An aggregate for the `Tag` type."""
+type TagAgg {
+  id: IntAgg
+  name: StringAgg
+}
+
+input TagCreationInput {
+  name: String!
+  trainingTags: [TrainingTagCreationInputFromTag!]
+}
+
+"""
+Predicate for the `Tag` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input TagFilter {
+  id: IntFilter
+  name: StringFilter
+  trainingTags: TrainingTagFilter
+  and: [TagFilter!]
+  or: [TagFilter!]
+  not: TagFilter
+}
+
+input TagOrdering {
+  id: Ordering
+  name: Ordering
+}
+
+input TagReferenceInput {
+  id: Int!
+}
+
+input TagUpdateInput {
+  id: Int
+  name: String
+  trainingTags: TrainingTagUpdateInputFromTag
+}
+
+type Training {
+  id: Int!
+  uuid: Uuid!
+  title: String!
+  description: String
+  published: Boolean!
+  trainingTags(where: TrainingTagFilter, orderBy: [TrainingTagOrdering!], limit: Int, offset: Int): [TrainingTag!]
+  trainingTagsAgg(where: TrainingTagFilter): TrainingTagAgg
+}
+
+"""An aggregate for the `Training` type."""
+type TrainingAgg {
+  id: IntAgg
+  uuid: UuidAgg
+  title: StringAgg
+  description: StringAgg
+  published: BooleanAgg
+}
+
+input TrainingCreationInput {
+  uuid: Uuid
+  title: String!
+  description: String
+  published: Boolean
+  trainingTags: [TrainingTagCreationInputFromTraining!]
+}
+
+"""
+Predicate for the `Training` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input TrainingFilter {
+  id: IntFilter
+  uuid: UuidFilter
+  title: StringFilter
+  description: StringFilter
+  published: BooleanFilter
+  trainingTags: TrainingTagFilter
+  and: [TrainingFilter!]
+  or: [TrainingFilter!]
+  not: TrainingFilter
+}
+
+input TrainingOrdering {
+  id: Ordering
+  uuid: Ordering
+  title: Ordering
+  description: Ordering
+  published: Ordering
+}
+
+input TrainingReferenceInput {
+  id: Int!
+}
+
+type TrainingTag {
+  id: Int!
+  training: Training!
+  tag: Tag!
+}
+
+"""An aggregate for the `TrainingTag` type."""
+type TrainingTagAgg {
+  id: IntAgg
+}
+
+input TrainingTagCreationInput {
+  training: TrainingReferenceInput!
+  tag: TagReferenceInput!
+}
+
+input TrainingTagCreationInputFromTag {
+  training: TrainingReferenceInput!
+}
+
+input TrainingTagCreationInputFromTraining {
+  tag: TagReferenceInput!
+}
+
+"""
+Predicate for the `TrainingTag` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input TrainingTagFilter {
+  id: IntFilter
+  training: TrainingFilter
+  tag: TagFilter
+  and: [TrainingTagFilter!]
+  or: [TrainingTagFilter!]
+  not: TrainingTagFilter
+}
+
+input TrainingTagOrdering {
+  id: Ordering
+  training: [TrainingOrdering!]
+  tag: [TagOrdering!]
+}
+
+input TrainingTagReferenceInput {
+  id: Int!
+}
+
+input TrainingTagUpdateInput {
+  id: Int
+  training: TrainingReferenceInput
+  tag: TagReferenceInput
+}
+
+input TrainingTagUpdateInputFromTag {
+  create: [TrainingTagCreationInputFromTag!]
+  update: [TrainingTagUpdateInputFromTagNested!]
+  delete: [TrainingTagReferenceInput!]
+}
+
+input TrainingTagUpdateInputFromTagNested {
+  id: Int!
+  training: TrainingReferenceInput
+}
+
+input TrainingTagUpdateInputFromTraining {
+  create: [TrainingTagCreationInputFromTraining!]
+  update: [TrainingTagUpdateInputFromTrainingNested!]
+  delete: [TrainingTagReferenceInput!]
+}
+
+input TrainingTagUpdateInputFromTrainingNested {
+  id: Int!
+  tag: TagReferenceInput
+}
+
+input TrainingUpdateInput {
+  id: Int
+  uuid: Uuid
+  title: String
+  description: String
+  published: Boolean
+  trainingTags: TrainingTagUpdateInputFromTraining
+}
+
+scalar Uuid
+
+type UuidAgg {
+  count: Int
+}
+
+input UuidFilter {
+  eq: Uuid
+  neq: Uuid
+}
+
+type Query {
+  """Get a single `Tag` given primary key fields"""
+  tag(id: Int!): Tag
+
+  """
+  Get multiple `Tag`s given the provided `where` filter, order by, limit, and offset
+  """
+  tags(where: TagFilter, orderBy: [TagOrdering!], limit: Int, offset: Int): [Tag!]!
+
+  """
+  Get the aggregate value of the selected fields over all `Tag`s given the provided `where` filter
+  """
+  tagsAgg(where: TagFilter): TagAgg!
+
+  """Get a single `Training` given primary key fields"""
+  training(id: Int!): Training
+
+  """Get a single `TrainingTag` given primary key fields"""
+  trainingTag(id: Int!): TrainingTag
+
+  """
+  Get multiple `TrainingTag`s given the provided `where` filter, order by, limit, and offset
+  """
+  trainingTags(where: TrainingTagFilter, orderBy: [TrainingTagOrdering!], limit: Int, offset: Int): [TrainingTag!]!
+
+  """
+  Get the aggregate value of the selected fields over all `TrainingTag`s given the provided `where` filter
+  """
+  trainingTagsAgg(where: TrainingTagFilter): TrainingTagAgg!
+
+  """
+  Get multiple `Training`s given the provided `where` filter, order by, limit, and offset
+  """
+  trainings(where: TrainingFilter, orderBy: [TrainingOrdering!], limit: Int, offset: Int): [Training!]!
+
+  """
+  Get the aggregate value of the selected fields over all `Training`s given the provided `where` filter
+  """
+  trainingsAgg(where: TrainingFilter): TrainingAgg!
+}
+
+type Mutation {
+  """
+  Create a new Tag. Check the `TagCreationInput` type for the expected shape of the data.
+  """
+  createTag(data: TagCreationInput!): Tag!
+
+  """
+  Create multiple Tags. Check the `TagCreationInput` type for the expected shape of the data.
+  """
+  createTags(data: [TagCreationInput!]!): [Tag!]!
+
+  """
+  Create a new Training. Check the `TrainingCreationInput` type for the expected shape of the data.
+  """
+  createTraining(data: TrainingCreationInput!): Training!
+
+  """
+  Create a new TrainingTag. Check the `TrainingTagCreationInput` type for the expected shape of the data.
+  """
+  createTrainingTag(data: TrainingTagCreationInput!): TrainingTag!
+
+  """
+  Create multiple TrainingTags. Check the `TrainingTagCreationInput` type for the expected shape of the data.
+  """
+  createTrainingTags(data: [TrainingTagCreationInput!]!): [TrainingTag!]!
+
+  """
+  Create multiple Trainings. Check the `TrainingCreationInput` type for the expected shape of the data.
+  """
+  createTrainings(data: [TrainingCreationInput!]!): [Training!]!
+
+  """Delete the Tag with the provided primary key."""
+  deleteTag(id: Int!): Tag
+
+  """Delete multiple Tags matching the provided `where` filter."""
+  deleteTags(where: TagFilter): [Tag!]!
+
+  """Delete the Training with the provided primary key."""
+  deleteTraining(id: Int!): Training
+
+  """Delete the TrainingTag with the provided primary key."""
+  deleteTrainingTag(id: Int!): TrainingTag
+
+  """Delete multiple TrainingTags matching the provided `where` filter."""
+  deleteTrainingTags(where: TrainingTagFilter): [TrainingTag!]!
+
+  """Delete multiple Trainings matching the provided `where` filter."""
+  deleteTrainings(where: TrainingFilter): [Training!]!
+
+  """
+  Update the Tag with the provided primary key with the provided data. Any fields not provided will remain unchanged.
+  """
+  updateTag(id: Int!, data: TagUpdateInput!): Tag
+
+  """
+  Update multiple Tags matching the provided `where` filter with the provided data. Any fields not provided will remain unchanged.
+  """
+  updateTags(where: TagFilter, data: TagUpdateInput!): [Tag!]!
+
+  """
+  Update the Training with the provided primary key with the provided data. Any fields not provided will remain unchanged.
+  """
+  updateTraining(id: Int!, data: TrainingUpdateInput!): Training
+
+  """
+  Update the TrainingTag with the provided primary key with the provided data. Any fields not provided will remain unchanged.
+  """
+  updateTrainingTag(id: Int!, data: TrainingTagUpdateInput!): TrainingTag
+
+  """
+  Update multiple TrainingTags matching the provided `where` filter with the provided data. Any fields not provided will remain unchanged.
+  """
+  updateTrainingTags(where: TrainingTagFilter, data: TrainingTagUpdateInput!): [TrainingTag!]!
+
+  """
+  Update multiple Trainings matching the provided `where` filter with the provided data. Any fields not provided will remain unchanged.
+  """
+  updateTrainings(where: TrainingFilter, data: TrainingUpdateInput!): [Training!]!
+}

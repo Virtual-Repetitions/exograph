@@ -344,10 +344,13 @@ async fn execute_computed_field(
         exograph_proceed: None,
     };
 
+    // Pass four arguments: parent, args, selection, exograph
+    // The 4th argument (Exograph) is required for computed resolvers
     let arg_sequence = vec![
         Arg::Serde(parent_snapshot.clone()),
         Arg::Serde(args_value),
         Arg::Serde(selection_value),
+        Arg::Shim("Exograph".to_string()), // Injected Exograph client
     ];
 
     deno_resolver
