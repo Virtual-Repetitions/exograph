@@ -21,7 +21,7 @@ impl PrimitiveTypeProvider for primitive_type::UuidType {
     }
 
     fn supported_operators(&self) -> Option<Vec<&'static str>> {
-        Some(vec!["eq", "neq"])
+        Some(vec!["eq", "neq", "in"])
     }
 
     fn supported_aggregates(

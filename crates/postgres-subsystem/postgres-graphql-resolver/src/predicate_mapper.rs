@@ -179,6 +179,7 @@ impl<'a> SQLMapper<'a, AbstractPredicate> for PredicateParamInput<'a> {
                         None,
                         &self.parent_column_path,
                         subsystem,
+                        false,
                     )?;
 
                     Ok(AbstractPredicate::eq(op_key_path, op_value_path))
@@ -406,6 +407,7 @@ impl<'a> SQLMapper<'a, AbstractPredicate> for PredicateParamInput<'a> {
                                         override_op_value_type,
                                         &self.parent_column_path,
                                         subsystem,
+                                        parameter.name.as_str() == "in",
                                     )
                                     .expect("Could not get operands");
 
@@ -650,6 +652,7 @@ pub fn predicate_from_name<C: PartialEq + ParamEquality>(
         "matchKey" => Predicate::JsonMatchKey(lhs, rhs),
         "matchAnyKey" => Predicate::JsonMatchAnyKey(lhs, rhs),
         "matchAllKeys" => Predicate::JsonMatchAllKeys(lhs, rhs),
+        "in" => Predicate::In(lhs, rhs),
         _ => todo!(),
     }
 }
@@ -678,6 +681,7 @@ fn operands<'a>(
     op_value_type: Option<&dyn PhysicalColumnType>,
     parent_column_path: &Option<PhysicalColumnPath>,
     subsystem: &'a PostgresGraphQLSubsystem,
+    unnest: bool,
 ) -> Result<(ColumnPath, ColumnPath), PostgresExecutionError> {
     let op_param_column_path = param
         .column_path_link
@@ -694,7 +698,7 @@ fn operands<'a>(
     let op_value = literal_column_path(
         op_value,
         op_value_type.unwrap_or(op_physical_column.typ.inner()),
-        false,
+        unnest,
     )?;
 
     Ok((

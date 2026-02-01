@@ -231,9 +231,10 @@ impl<'a> OperationValidator<'a> {
                 {
                     return match value {
                         Value::String(enum_value) => {
-                            let is_valid = enum_type.values.iter().any(|value_def| {
-                                value_def.node.value.node.as_str() == enum_value
-                            });
+                            let is_valid = enum_type
+                                .values
+                                .iter()
+                                .any(|value_def| value_def.node.value.node.as_str() == enum_value);
 
                             if is_valid {
                                 Ok(ConstValue::Enum(Name::new(enum_value)))

@@ -446,12 +446,19 @@ fn create_operator_filter_type_kind(
         };
         let predicate_param_type_id = building.predicate_types.get_id(operand_type).unwrap();
 
+        let base_type = FieldType::Plain(PredicateParameterTypeWrapper {
+            name: operand_type.to_owned(),
+            type_id: predicate_param_type_id,
+        });
+        let wrapped_type = if operator == &"in" {
+            FieldType::Optional(Box::new(FieldType::List(Box::new(base_type))))
+        } else {
+            FieldType::Optional(Box::new(base_type))
+        };
+
         PredicateParameter {
             name: operator.to_string(),
-            typ: FieldType::Optional(Box::new(FieldType::Plain(PredicateParameterTypeWrapper {
-                name: operand_type.to_owned(),
-                type_id: predicate_param_type_id,
-            }))),
+            typ: wrapped_type,
             column_path_link: None,
             access: None,
             vector_distance_function: None,
