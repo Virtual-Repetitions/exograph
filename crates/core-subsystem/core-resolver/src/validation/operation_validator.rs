@@ -11,7 +11,10 @@ use std::collections::HashMap;
 
 use async_graphql_parser::{
     Pos, Positioned,
-    types::{BaseType, FragmentDefinition, OperationDefinition, OperationType, TypeKind, VariableDefinition},
+    types::{
+        BaseType, FragmentDefinition, OperationDefinition, OperationType, TypeKind,
+        VariableDefinition,
+    },
 };
 use async_graphql_value::{ConstValue, Name};
 use serde::de::Error;
@@ -182,7 +185,11 @@ impl<'a> OperationValidator<'a> {
                 )
             })?;
 
-        self.coerce_variable_value(&variable_definition.node.var_type.node, resolved.clone(), variable_name)
+        self.coerce_variable_value(
+            &variable_definition.node.var_type.node,
+            resolved.clone(),
+            variable_name,
+        )
     }
 
     fn coerce_variable_value(
@@ -219,34 +226,32 @@ impl<'a> OperationValidator<'a> {
                 }),
             },
             BaseType::Named(type_name) => {
-                if let Some(type_definition) =
-                    self.schema.get_type_definition(type_name.as_str())
+                if let Some(type_definition) = self.schema.get_type_definition(type_name.as_str())
+                    && let TypeKind::Enum(enum_type) = &type_definition.kind
                 {
-                    if let TypeKind::Enum(enum_type) = &type_definition.kind {
-                        return match value {
-                            Value::String(enum_value) => {
-                                let is_valid = enum_type.values.iter().any(|value_def| {
-                                    value_def.node.value.node.as_str() == enum_value
-                                });
+                    return match value {
+                        Value::String(enum_value) => {
+                            let is_valid = enum_type.values.iter().any(|value_def| {
+                                value_def.node.value.node.as_str() == enum_value
+                            });
 
-                                if is_valid {
-                                    Ok(ConstValue::Enum(Name::new(enum_value)))
-                                } else {
-                                    Err(error(format!(
-                                        "Invalid enum value '{}' for type '{}'",
-                                        enum_value,
-                                        type_name.as_str()
-                                    )))
-                                }
+                            if is_valid {
+                                Ok(ConstValue::Enum(Name::new(enum_value)))
+                            } else {
+                                Err(error(format!(
+                                    "Invalid enum value '{}' for type '{}'",
+                                    enum_value,
+                                    type_name.as_str()
+                                )))
                             }
-                            Value::Null => Ok(ConstValue::Null),
-                            _ => Err(error(format!(
-                                "Expected enum value for type '{}', got {}",
-                                type_name.as_str(),
-                                value
-                            ))),
-                        };
-                    }
+                        }
+                        Value::Null => Ok(ConstValue::Null),
+                        _ => Err(error(format!(
+                            "Expected enum value for type '{}', got {}",
+                            type_name.as_str(),
+                            value
+                        ))),
+                    };
                 }
 
                 ConstValue::from_json(value).map_err(|e| {

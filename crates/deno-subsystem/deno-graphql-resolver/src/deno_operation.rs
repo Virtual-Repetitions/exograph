@@ -33,12 +33,12 @@ use tracing::{debug, trace, warn};
 
 use crate::{
     DenoSubsystemResolver, deno_execution_error::DenoExecutionError,
-    exo_execution::ExoCallbackProcessor, module_access_predicate::ModuleAccessPredicate,
-    exograph_ops::InterceptedOperationInfo,
+    exo_execution::ExoCallbackProcessor, exograph_ops::InterceptedOperationInfo,
+    module_access_predicate::ModuleAccessPredicate,
 };
 
-use std::collections::HashMap;
 use serde_json::Value;
+use std::collections::HashMap;
 
 pub struct DenoOperation<'a> {
     pub method: &'a ModuleMethod,
@@ -189,7 +189,10 @@ fn operation_to_value(operation: &ValidatedField) -> Value {
             .map(|alias| alias.to_string())
             .into(),
     );
-    map.insert("name".to_string(), Value::String(operation.name.to_string()));
+    map.insert(
+        "name".to_string(),
+        Value::String(operation.name.to_string()),
+    );
     map.insert(
         "arguments".to_string(),
         Value::Object(
