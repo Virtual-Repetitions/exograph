@@ -134,6 +134,14 @@ fn collect_exo_projects(root_directory: &Path) -> Vec<PathBuf> {
         for subdir in dir.read_dir().unwrap().flatten() {
             if subdir.path().is_dir() {
                 let subdir_path = subdir.path();
+                // Skip directories with .skip suffix
+                if subdir_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|s| s.ends_with(".skip"))
+                {
+                    continue;
+                }
                 if is_exoproject_with_tests(&subdir_path) {
                     acc.push(subdir_path);
                 } else {

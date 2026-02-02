@@ -33,9 +33,11 @@ use tracing::{debug, trace, warn};
 
 use crate::{
     DenoSubsystemResolver, deno_execution_error::DenoExecutionError,
-    exo_execution::ExoCallbackProcessor, module_access_predicate::ModuleAccessPredicate,
+    exo_execution::ExoCallbackProcessor, exograph_ops::InterceptedOperationInfo,
+    module_access_predicate::ModuleAccessPredicate,
 };
 
+use serde_json::Value;
 use std::collections::HashMap;
 
 pub struct DenoOperation<'a> {
@@ -145,7 +147,10 @@ impl DenoOperation<'_> {
                 deserialized,
                 &self.method.name,
                 arg_sequence,
-                None,
+                Some(InterceptedOperationInfo {
+                    name: self.field.name.to_string(),
+                    query: operation_to_value(self.field),
+                }),
                 callback_processor,
             )
             .await
@@ -170,6 +175,42 @@ impl DenoOperation<'_> {
     fn subsystem(&self) -> &DenoSubsystem {
         &self.subsystem_resolver.subsystem
     }
+}
+
+// We can't use Value::to_json, since the conversion from `Val` to `Value` doesn't map
+// carries additional tags that don't work from the Deno side.
+fn operation_to_value(operation: &ValidatedField) -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert(
+        "alias".to_string(),
+        operation
+            .alias
+            .as_ref()
+            .map(|alias| alias.to_string())
+            .into(),
+    );
+    map.insert(
+        "name".to_string(),
+        Value::String(operation.name.to_string()),
+    );
+    map.insert(
+        "arguments".to_string(),
+        Value::Object(
+            operation
+                .arguments
+                .iter()
+                .map(|(key, value)| {
+                    let json_value: serde_json::Value = value.clone().try_into().unwrap();
+                    (key.to_string(), json_value)
+                })
+                .collect(),
+        ),
+    );
+    map.insert(
+        "subfields".to_string(),
+        Value::Array(operation.subfields.iter().map(operation_to_value).collect()),
+    );
+    Value::Object(map)
 }
 
 pub async fn construct_arg_sequence<'a>(

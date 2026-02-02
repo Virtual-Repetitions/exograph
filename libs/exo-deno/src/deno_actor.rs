@@ -172,9 +172,14 @@ where
                     let r: Option<R> = deno_module.take().expect("take() should not have failed");
 
                     // send result of the Deno function back to call_method
-                    final_response_sender
+                    if final_response_sender
                         .send(result.map(|result| (result, r)))
-                        .expect("Could not send result in DenoActor thread");
+                        .is_err()
+                    {
+                        tracing::error!(
+                            "DenoActor result receiver dropped before response was sent"
+                        );
+                    }
 
                     busy_clone.store(false, Ordering::Relaxed); // unmark DenoActor as busy
                 }

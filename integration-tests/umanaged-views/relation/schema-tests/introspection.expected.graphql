@@ -27,8 +27,8 @@ To check a field against null, use a `<field name>: null` filter
 input DepartmentFilter {
   id: IntFilter
   name: StringFilter
-  products: ProductFilter
-  productProfits: ProductProfitFilter
+  products: ProductSomeFilter
+  productProfits: ProductProfitSomeFilter
   and: [DepartmentFilter!]
   or: [DepartmentFilter!]
   not: DepartmentFilter
@@ -203,6 +203,24 @@ input ProductProfitReferenceInput {
   id: Int!
 }
 
+"""
+Predicate for the `ProductProfit` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input ProductProfitSomeFilter {
+  some: ProductProfitFilter
+  id: IntFilter
+  name: StringFilter
+  salePrice: FloatFilter
+  purchasePrice: FloatFilter
+  profit: FloatFilter
+  department: DepartmentFilter
+  and: [ProductProfitFilter!]
+  or: [ProductProfitFilter!]
+  not: ProductProfitFilter
+}
+
 input ProductProfitUpdateInput {
   id: Int
   name: String
@@ -226,6 +244,23 @@ input ProductProfitUpdateInputFromDepartmentNested {
 
 input ProductReferenceInput {
   id: Int!
+}
+
+"""
+Predicate for the `Product` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input ProductSomeFilter {
+  some: ProductFilter
+  id: IntFilter
+  name: StringFilter
+  salePrice: FloatFilter
+  purchasePrice: FloatFilter
+  department: DepartmentFilter
+  and: [ProductFilter!]
+  or: [ProductFilter!]
+  not: ProductFilter
 }
 
 input ProductUpdateInput {

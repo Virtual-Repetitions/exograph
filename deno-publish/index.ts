@@ -67,6 +67,76 @@ export interface Operation {
   query(): Field;
 }
 
+// SelectionField is the type used for computed field selection metadata
+export interface SelectionField {
+  name: string;
+  outputName: string;
+  alias?: string;
+  arguments?: JsonObject;
+  fields?: SelectionField[];
+}
+
+/**
+ * Convert a selection field array into a GraphQL selection string.
+ * 
+ * @param selection - Array of selection fields
+ * @param options - Configuration options
+ * @returns GraphQL selection string (without wrapping braces)
+ * 
+ * @example
+ * const selection = [
+ *   { name: "id", outputName: "id" },
+ *   { name: "title", outputName: "title" },
+ *   { name: "author", outputName: "author", fields: [
+ *     { name: "name", outputName: "name" }
+ *   ]}
+ * ];
+ * const gql = selectionToGraphql(selection);
+ * // Returns: "id title author { name }"
+ */
+export function selectionToGraphql(
+  selection: SelectionField[],
+  options?: {
+    includeAliases?: boolean;
+    includeArguments?: boolean;
+  }
+): string {
+  const { includeAliases = true, includeArguments = true } = options || {};
+
+  function fieldToGraphql(field: SelectionField, indent = ""): string {
+    let result = indent;
+
+    // Add alias if present and enabled
+    if (includeAliases && field.alias && field.alias !== field.name) {
+      result += `${field.alias}: `;
+    }
+
+    // Add field name
+    result += field.name;
+
+    // Add arguments if present and enabled
+    if (includeArguments && field.arguments && Object.keys(field.arguments).length > 0) {
+      const args = Object.entries(field.arguments)
+        .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+        .join(", ");
+      result += `(${args})`;
+    }
+
+    // Add nested fields if present
+    if (field.fields && field.fields.length > 0) {
+      result += " {\n";
+      result += field.fields
+        .map(f => fieldToGraphql(f, indent + "  "))
+        .join("\n");
+      result += `\n${indent}}`;
+    }
+
+    return result;
+  }
+
+  return selection.map(f => fieldToGraphql(f)).join("\n");
+}
+
 declare global {
   class ExographError extends Error {
     constructor(message: string);

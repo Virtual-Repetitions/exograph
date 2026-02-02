@@ -120,6 +120,23 @@ input TodoReferenceInput {
   id: Int!
 }
 
+"""
+Predicate for the `Todo` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input TodoSomeFilter {
+  some: TodoFilter
+  id: IntFilter
+  title: StringFilter
+  completed: BooleanFilter
+  priority: PriorityFilter
+  user: UserFilter
+  and: [TodoFilter!]
+  or: [TodoFilter!]
+  not: TodoFilter
+}
+
 input TodoUpdateInput {
   id: Int
   title: String
@@ -183,7 +200,7 @@ input UserFilter {
   lastName: StringFilter
   profileImageUrl: StringFilter
   role: StringFilter
-  todos: TodoFilter
+  todos: TodoSomeFilter
   and: [UserFilter!]
   or: [UserFilter!]
   not: UserFilter

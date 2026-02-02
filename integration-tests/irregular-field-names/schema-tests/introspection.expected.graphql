@@ -65,6 +65,21 @@ input ProjectReferenceInput {
   id: Int!
 }
 
+"""
+Predicate for the `Project` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input ProjectSomeFilter {
+  some: ProjectFilter
+  id: IntFilter
+  title: StringFilter
+  owner: UserFilter
+  and: [ProjectFilter!]
+  or: [ProjectFilter!]
+  not: ProjectFilter
+}
+
 input ProjectUpdateInput {
   id: Int
   title: String
@@ -127,7 +142,7 @@ To check a field against null, use a `<field name>: null` filter
 input UserFilter {
   id: IntFilter
   name: StringFilter
-  assignedProjects: ProjectFilter
+  assignedProjects: ProjectSomeFilter
   and: [UserFilter!]
   or: [UserFilter!]
   not: UserFilter

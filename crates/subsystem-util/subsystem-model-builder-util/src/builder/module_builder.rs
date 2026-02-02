@@ -37,15 +37,17 @@ pub fn build_shallow(
     _types: &MappedArena<ResolvedType>,
     modules: &MappedArena<ResolvedModule>,
     building: &mut SystemContextBuilding,
-) {
+) -> Result<(), core_model_builder::error::ModelBuildingError> {
     for (_, module) in modules.iter() {
         for method in module.methods.iter() {
-            create_shallow_module(module, method, building);
+            create_shallow_module(module, method, building)?;
         }
         for interceptor in module.interceptors.iter() {
             create_shallow_interceptor(module, interceptor, building);
         }
     }
+
+    Ok(())
 }
 
 pub fn build_expanded(building: &mut SystemContextBuilding) {
@@ -96,7 +98,7 @@ fn create_shallow_module(
     resolved_module: &ResolvedModule,
     resolved_method: &ResolvedMethod,
     building: &mut SystemContextBuilding,
-) {
+) -> Result<(), core_model_builder::error::ModelBuildingError> {
     let script = get_or_populate_script(
         &resolved_module.script_path,
         &resolved_module.script,
@@ -107,7 +109,7 @@ fn create_shallow_module(
         resolved_method.access.value,
         AstExpr::BooleanLiteral(false, _)
     ) {
-        return;
+        return Ok(());
     }
 
     building.methods.add(
@@ -118,13 +120,14 @@ fn create_shallow_module(
             access: Access::restrictive(),
             operation_kind: match resolved_method.operation_kind {
                 ResolvedMethodType::Query => {
-                    let query = shallow_module_query(resolved_method, &building.types, building);
+                    let query =
+                        shallow_module_query(resolved_method, &building.types, building)?;
                     let query_id = building.queries.add(&resolved_method.name, query);
                     ModuleMethodType::Query(query_id)
                 }
                 ResolvedMethodType::Mutation => {
                     let mutation =
-                        shallow_module_mutation(resolved_method, &building.types, building);
+                        shallow_module_mutation(resolved_method, &building.types, building)?;
                     let mutation_id = building.mutations.add(&resolved_method.name, mutation);
                     ModuleMethodType::Mutation(mutation_id)
                 }
@@ -133,12 +136,20 @@ fn create_shallow_module(
             arguments: resolved_method
                 .arguments
                 .iter()
-                .map(|arg| Argument {
-                    name: arg.name.clone(),
-                    type_id: arg.typ.wrap(building.get_id(arg.typ.name()).unwrap()),
-                    is_injected: arg.is_injected,
+                .map(|arg| {
+                    let type_id = building.get_id(arg.typ.name()).ok_or_else(|| {
+                        core_model_builder::error::ModelBuildingError::Generic(format!(
+                            "Unknown argument type '{}' for module method '{}'. Ensure the type is defined or imported.",
+                            arg.typ.name(), resolved_method.name
+                        ))
+                    })?;
+                    Ok(Argument {
+                        name: arg.name.clone(),
+                        type_id: arg.typ.wrap(type_id),
+                        is_injected: arg.is_injected,
+                    })
                 })
-                .collect(),
+                .collect::<Result<Vec<_>, core_model_builder::error::ModelBuildingError>>()?,
             return_type: {
                 match &resolved_method.return_type.innermost().module_name {
                     Some(module_name) => {
@@ -151,10 +162,16 @@ fn create_shallow_module(
                         )
                     }
                     None => {
+                        let associated_type_id = building
+                            .get_id(resolved_method.return_type.name())
+                            .ok_or_else(|| {
+                                core_model_builder::error::ModelBuildingError::Generic(format!(
+                                    "Unknown return type '{}' for module method '{}'. Ensure the type is defined or imported.",
+                                    resolved_method.return_type.name(), resolved_method.name
+                                ))
+                            })?;
                         let plain_return_type = BaseOperationReturnType {
-                            associated_type_id: building
-                                .get_id(resolved_method.return_type.name())
-                                .unwrap(),
+                            associated_type_id,
                             type_name: resolved_method.return_type.name().to_string(),
                         };
 
@@ -167,40 +184,43 @@ fn create_shallow_module(
             doc_comments: resolved_method.doc_comments.clone(),
         },
     );
+
+    Ok(())
 }
 
 fn shallow_module_query(
     method: &ResolvedMethod,
     module_types: &MappedArena<ModuleType>,
     building: &SystemContextBuilding,
-) -> ModuleQuery {
-    ModuleQuery {
+) -> Result<ModuleQuery, core_model_builder::error::ModelBuildingError> {
+    Ok(ModuleQuery {
         name: method.name.clone(),
         method_id: None,
         argument_param: argument_param(method, building),
-        return_type: compute_shallow_return_type(&method.return_type, module_types),
+        return_type: compute_shallow_return_type(&method.return_type, module_types, &method.name)?,
         doc_comments: method.doc_comments.clone(),
-    }
+    })
 }
 
 fn shallow_module_mutation(
     method: &ResolvedMethod,
     module_types: &MappedArena<ModuleType>,
     building: &SystemContextBuilding,
-) -> ModuleMutation {
-    ModuleMutation {
+) -> Result<ModuleMutation, core_model_builder::error::ModelBuildingError> {
+    Ok(ModuleMutation {
         name: method.name.clone(),
         method_id: None,
         argument_param: argument_param(method, building),
-        return_type: compute_shallow_return_type(&method.return_type, module_types),
+        return_type: compute_shallow_return_type(&method.return_type, module_types, &method.name)?,
         doc_comments: method.doc_comments.clone(),
-    }
+    })
 }
 
 fn compute_shallow_return_type(
     resolved_return_type: &FieldType<ResolvedFieldType>,
     module_types: &MappedArena<ModuleType>,
-) -> ModuleOperationReturnType {
+    method_name: &str,
+) -> Result<ModuleOperationReturnType, core_model_builder::error::ModelBuildingError> {
     let module_name = resolved_return_type.innermost().module_name.clone();
     let return_type_name = resolved_return_type.name();
 
@@ -210,15 +230,25 @@ fn compute_shallow_return_type(
                 module_name,
                 return_type_name: return_type_name.to_string(),
             };
-            ModuleOperationReturnType::Foreign(resolved_return_type.wrap(plain_return_type))
+            Ok(ModuleOperationReturnType::Foreign(
+                resolved_return_type.wrap(plain_return_type),
+            ))
         }
 
         None => {
+            let associated_type_id = module_types.get_id(return_type_name).ok_or_else(|| {
+                core_model_builder::error::ModelBuildingError::Generic(format!(
+                    "Unknown return type '{}' for module method '{}'. Ensure the type is defined or imported.",
+                    return_type_name, method_name
+                ))
+            })?;
             let plain_return_type = BaseOperationReturnType {
-                associated_type_id: module_types.get_id(return_type_name).unwrap(),
+                associated_type_id,
                 type_name: return_type_name.to_string(),
             };
-            ModuleOperationReturnType::Own(resolved_return_type.wrap(plain_return_type))
+            Ok(ModuleOperationReturnType::Own(
+                resolved_return_type.wrap(plain_return_type),
+            ))
         }
     }
 }

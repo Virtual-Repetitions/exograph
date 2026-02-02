@@ -50,6 +50,22 @@ input ChunkReferenceInput {
   id: Int!
 }
 
+"""
+Predicate for the `Chunk` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input ChunkSomeFilter {
+  some: ChunkFilter
+  id: IntFilter
+  todo: TodoFilter
+  chunk: StringFilter
+  chunkVector: VectorFilter
+  and: [ChunkFilter!]
+  or: [ChunkFilter!]
+  not: ChunkFilter
+}
+
 input ChunkUpdateInput {
   id: Int
   todo: TodoReferenceInput
@@ -149,7 +165,7 @@ input TodoFilter {
   id: IntFilter
   title: StringFilter
   description: StringFilter
-  chunks: ChunkFilter
+  chunks: ChunkSomeFilter
   and: [TodoFilter!]
   or: [TodoFilter!]
   not: TodoFilter

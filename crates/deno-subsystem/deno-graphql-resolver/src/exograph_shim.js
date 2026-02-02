@@ -9,7 +9,8 @@
 
 ({
     executeQuery: async function (query_string, variables) {
-        const result = await ExographExtension.executeQuery(query_string, variables);
+        const normalizedVars = variables === undefined ? null : variables;
+        const result = await ExographExtension.executeQuery(query_string, normalizedVars);
         return result;
     },
 

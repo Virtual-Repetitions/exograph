@@ -1,0 +1,149 @@
+stages:
+    # Setup: Create training records
+    - operation: |
+        mutation {
+          createTrainings(data: [
+            {
+              uuid: "123e4567-e89b-12d3-a456-426614174000",
+              title: "GraphQL Basics",
+              description: "Learn GraphQL from scratch",
+              published: true
+            },
+            {
+              uuid: "223e4567-e89b-12d3-a456-426614174000",
+              title: "Advanced TypeScript",
+              description: "Master TypeScript",
+              published: true
+            }
+          ]) {
+            id
+          }
+        }
+      response: |
+        {
+          "data": {
+            "createTrainings": [
+              {"id": 1},
+              {"id": 2}
+            ]
+          }
+        }
+    
+    # Setup: Create tags
+    - operation: |
+        mutation {
+          createTags(data: [
+            {name: "beginner"},
+            {name: "intermediate"}
+          ]) {
+            id
+          }
+        }
+      response: |
+        {
+          "data": {
+            "createTags": [
+              {"id": 1},
+              {"id": 2}
+            ]
+          }
+        }
+    
+    # Test 1: Basic selection-aware query
+    # Only request title, fullData should only fetch title
+    - operation: |
+        query {
+          publicTrainings: trainings {
+            title
+            fullData {
+              title
+            }
+          }
+        }
+      response: |
+        {
+          "data": {
+            "publicTrainings": [
+              {
+                "title": "GraphQL Basics",
+                "fullData": {
+                  "title": "GraphQL Basics"
+                }
+              },
+              {
+                "title": "Advanced TypeScript", 
+                "fullData": {
+                  "title": "Advanced TypeScript"
+                }
+              }
+            ]
+          }
+        }
+    
+    # Test 2: Nested selection
+    # Request nested fields through fullData computed field
+    - operation: |
+        query {
+          publicTrainings: trainings {
+            uuid
+            fullData {
+              title
+              description
+              published
+            }
+          }
+        }
+      response: |
+        {
+          "data": {
+            "publicTrainings": [
+              {
+                "uuid": "123e4567-e89b-12d3-a456-426614174000",
+                "fullData": {
+                  "title": "GraphQL Basics",
+                  "description": "Learn GraphQL from scratch",
+                  "published": true
+                }
+              },
+              {
+                "uuid": "223e4567-e89b-12d3-a456-426614174000",
+                "fullData": {
+                  "title": "Advanced TypeScript",
+                  "description": "Master TypeScript",
+                  "published": true
+                }
+              }
+            ]
+          }
+        }
+    
+    # Test 3: Selection with only id and uuid
+    # Demonstrates that only requested fields are returned
+    - operation: |
+        query {
+          publicTrainings: trainings {
+            fullData {
+              id
+              uuid
+            }
+          }
+        }
+      response: |
+        {
+          "data": {
+            "publicTrainings": [
+              {
+                "fullData": {
+                  "id": 1,
+                  "uuid": "123e4567-e89b-12d3-a456-426614174000"
+                }
+              },
+              {
+                "fullData": {
+                  "id": 2,
+                  "uuid": "223e4567-e89b-12d3-a456-426614174000"
+                }
+              }
+            ]
+          }
+        }

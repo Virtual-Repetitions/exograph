@@ -41,7 +41,7 @@ To check a field against null, use a `<field name>: null` filter
 input MailingListFilter {
   id: IntFilter
   email_address: StringFilter
-  subscriptions: UserSubscriptionFilter
+  subscriptions: UserSubscriptionSomeFilter
   and: [MailingListFilter!]
   or: [MailingListFilter!]
   not: MailingListFilter
@@ -112,7 +112,7 @@ To check a field against null, use a `<field name>: null` filter
 input UserFilter {
   id: IntFilter
   username: StringFilter
-  subscribed_lists: UserSubscriptionFilter
+  subscribed_lists: UserSubscriptionSomeFilter
   and: [UserFilter!]
   or: [UserFilter!]
   not: UserFilter
@@ -173,6 +173,21 @@ input UserSubscriptionOrdering {
 
 input UserSubscriptionReferenceInput {
   id: Int!
+}
+
+"""
+Predicate for the `UserSubscription` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input UserSubscriptionSomeFilter {
+  some: UserSubscriptionFilter
+  id: IntFilter
+  user: UserFilter
+  mailing_list: MailingListFilter
+  and: [UserSubscriptionFilter!]
+  or: [UserSubscriptionFilter!]
+  not: UserSubscriptionFilter
 }
 
 input UserSubscriptionUpdateInput {

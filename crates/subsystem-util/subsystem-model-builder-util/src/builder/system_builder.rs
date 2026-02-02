@@ -108,7 +108,7 @@ pub async fn build_with_selection(
         function_definitions: &base_system.function_definitions,
     };
 
-    build_shallow_module(&resolved_env, &mut building);
+    build_shallow_module(&resolved_env, &mut building)?;
     build_expanded_module(&resolved_env, &mut building)?;
 
     let interceptors: Vec<(AstExpr<Typed>, SerializableSlabIndex<Interceptor>)> = resolved_env
@@ -151,13 +151,18 @@ pub async fn build_with_selection(
     })
 }
 
-fn build_shallow_module(resolved_env: &ResolvedTypeEnv, building: &mut SystemContextBuilding) {
+fn build_shallow_module(
+    resolved_env: &ResolvedTypeEnv,
+    building: &mut SystemContextBuilding,
+) -> Result<(), ModelBuildingError> {
     let resolved_module_types = &resolved_env.resolved_types;
     let resolved_modules = &resolved_env.resolved_modules;
 
     type_builder::build_shallow(resolved_module_types, resolved_env.contexts, building);
 
-    module_builder::build_shallow(resolved_module_types, resolved_modules, building);
+    module_builder::build_shallow(resolved_module_types, resolved_modules, building)?;
+
+    Ok(())
 }
 
 fn build_expanded_module(

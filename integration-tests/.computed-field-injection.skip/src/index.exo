@@ -1,0 +1,55 @@
+@deno("resolvers.ts")
+module PublicTrainingModule {
+  // PublicTraining is a "view" of Training with a computed field
+  // that uses the new Exograph injection feature
+  @computed
+  type PublicTraining {
+    uuid: Uuid
+    title: String
+    description: String?
+    tags: Set<PublicTag>?
+    
+    @computed(
+      source = "resolvers.ts",
+      export = "fetchPublicTraining"
+    )
+    fullData: Training?
+  }
+
+  @computed
+  type PublicTag {
+    name: String
+  }
+
+  @access(true)
+  export query publicTrainings(
+    @inject exograph: Exograph
+  ): Array<PublicTraining>
+}
+
+@postgres
+module TrainingDatabase {
+  @access(true)
+  type Training {
+    @pk id: Int = autoIncrement()
+    uuid: Uuid = generate_uuid()
+    title: String
+    description: String?
+    published: Boolean = false
+    trainingTags: Set<TrainingTag>?
+  }
+
+  @access(true)
+  type Tag {
+    @pk id: Int = autoIncrement()
+    name: String
+    trainingTags: Set<TrainingTag>?
+  }
+
+  @access(true)
+  type TrainingTag {
+    @pk id: Int = autoIncrement()
+    training: Training
+    tag: Tag
+  }
+}

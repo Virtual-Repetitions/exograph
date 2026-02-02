@@ -43,6 +43,21 @@ input DocumentReferenceInput {
   id: Int!
 }
 
+"""
+Predicate for the `Document` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input DocumentSomeFilter {
+  some: DocumentFilter
+  id: IntFilter
+  content: StringFilter
+  user: UserFilter
+  and: [DocumentFilter!]
+  or: [DocumentFilter!]
+  not: DocumentFilter
+}
+
 input DocumentUpdateInput {
   id: Int
   content: String
@@ -127,7 +142,7 @@ To check a field against null, use a `<field name>: null` filter
 input UserFilter {
   id: IntFilter
   name: StringFilter
-  documents: DocumentFilter
+  documents: DocumentSomeFilter
   and: [UserFilter!]
   or: [UserFilter!]
   not: UserFilter

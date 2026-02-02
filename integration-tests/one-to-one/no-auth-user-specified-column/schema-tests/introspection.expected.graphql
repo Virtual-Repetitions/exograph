@@ -60,6 +60,21 @@ input MembershipReferenceInput {
   id: Int!
 }
 
+"""
+Predicate for the `Membership` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input MembershipSomeFilter {
+  some: MembershipFilter
+  id: IntFilter
+  kind: StringFilter
+  user: UserFilter
+  and: [MembershipFilter!]
+  or: [MembershipFilter!]
+  not: MembershipFilter
+}
+
 input MembershipUpdateInput {
   id: Int
   kind: String
@@ -126,7 +141,7 @@ To check a field against null, use a `<field name>: null` filter
 input UserFilter {
   id: IntFilter
   name: StringFilter
-  membership: MembershipFilter
+  membership: MembershipSomeFilter
   and: [UserFilter!]
   or: [UserFilter!]
   not: UserFilter

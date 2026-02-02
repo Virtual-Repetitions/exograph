@@ -33,7 +33,7 @@ To check a field against null, use a `<field name>: null` filter
 input ChatFilter {
   id: IntFilter
   title: StringFilter
-  participants: ChatParticipationFilter
+  participants: ChatParticipationSomeFilter
   and: [ChatFilter!]
   or: [ChatFilter!]
   not: ChatFilter
@@ -87,7 +87,7 @@ input ChatParticipationFilter {
   chat: ChatFilter
   user: UserFilter
   chatAdmin: BooleanFilter
-  moods: MoodFilter
+  moods: MoodSomeFilter
   and: [ChatParticipationFilter!]
   or: [ChatParticipationFilter!]
   not: ChatParticipationFilter
@@ -102,6 +102,22 @@ input ChatParticipationOrdering {
 input ChatParticipationReferenceInput {
   chat: ChatReferenceInput!
   user: UserReferenceInput!
+}
+
+"""
+Predicate for the `ChatParticipation` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input ChatParticipationSomeFilter {
+  some: ChatParticipationFilter
+  chat: ChatFilter
+  user: UserFilter
+  chatAdmin: BooleanFilter
+  moods: MoodSomeFilter
+  and: [ChatParticipationFilter!]
+  or: [ChatParticipationFilter!]
+  not: ChatParticipationFilter
 }
 
 input ChatParticipationUpdateInput {
@@ -212,6 +228,21 @@ input MoodReferenceInput {
   id: Int!
 }
 
+"""
+Predicate for the `Mood` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input MoodSomeFilter {
+  some: MoodFilter
+  id: IntFilter
+  name: StringFilter
+  chatParticipation: ChatParticipationFilter
+  and: [MoodFilter!]
+  or: [MoodFilter!]
+  not: MoodFilter
+}
+
 input MoodUpdateInput {
   id: Int
   name: String
@@ -279,7 +310,7 @@ To check a field against null, use a `<field name>: null` filter
 input UserFilter {
   id: IntFilter
   name: StringFilter
-  participatesIn: ChatParticipationFilter
+  participatesIn: ChatParticipationSomeFilter
   and: [UserFilter!]
   or: [UserFilter!]
   not: UserFilter

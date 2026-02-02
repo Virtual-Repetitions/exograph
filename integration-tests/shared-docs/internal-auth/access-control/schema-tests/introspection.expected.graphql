@@ -33,7 +33,7 @@ To check a field against null, use a `<field name>: null` filter
 input DocumentFilter {
   id: IntFilter
   content: StringFilter
-  permissions: PermissionFilter
+  permissions: PermissionSomeFilter
   and: [DocumentFilter!]
   or: [DocumentFilter!]
   not: DocumentFilter
@@ -138,6 +138,23 @@ input PermissionReferenceInput {
   id: Int!
 }
 
+"""
+Predicate for the `Permission` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input PermissionSomeFilter {
+  some: PermissionFilter
+  id: IntFilter
+  document: DocumentFilter
+  user: UserFilter
+  read: BooleanFilter
+  write: BooleanFilter
+  and: [PermissionFilter!]
+  or: [PermissionFilter!]
+  not: PermissionFilter
+}
+
 input PermissionUpdateInput {
   id: Int
   document: DocumentReferenceInput
@@ -217,7 +234,7 @@ To check a field against null, use a `<field name>: null` filter
 input UserFilter {
   id: IntFilter
   name: StringFilter
-  permissions: PermissionFilter
+  permissions: PermissionSomeFilter
   and: [UserFilter!]
   or: [UserFilter!]
   not: UserFilter

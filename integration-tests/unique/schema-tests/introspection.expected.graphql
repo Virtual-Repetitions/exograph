@@ -66,6 +66,22 @@ input InternalRsvpReferenceInput {
   id: Int!
 }
 
+"""
+Predicate for the `InternalRsvp` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input InternalRsvpSomeFilter {
+  some: InternalRsvpFilter
+  id: IntFilter
+  event: StringFilter
+  user: UserFilter
+  count: IntFilter
+  and: [InternalRsvpFilter!]
+  or: [InternalRsvpFilter!]
+  not: InternalRsvpFilter
+}
+
 input InternalRsvpUpdateInput {
   id: Int
   event: String
@@ -139,6 +155,22 @@ input RsvpOrdering {
 
 input RsvpReferenceInput {
   id: Int!
+}
+
+"""
+Predicate for the `Rsvp` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input RsvpSomeFilter {
+  some: RsvpFilter
+  id: IntFilter
+  event: StringFilter
+  user: UserFilter
+  count: IntFilter
+  and: [RsvpFilter!]
+  or: [RsvpFilter!]
+  not: RsvpFilter
 }
 
 input RsvpUpdateInput {
@@ -220,8 +252,8 @@ input UserFilter {
   primaryEmailId: StringFilter
   secondaryEmailId: StringFilter
   emailDomain: StringFilter
-  rsvps: RsvpFilter
-  internalRsvps: InternalRsvpFilter
+  rsvps: RsvpSomeFilter
+  internalRsvps: InternalRsvpSomeFilter
   and: [UserFilter!]
   or: [UserFilter!]
   not: UserFilter

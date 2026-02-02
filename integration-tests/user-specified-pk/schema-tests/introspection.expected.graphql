@@ -25,7 +25,7 @@ To check a field against null, use a `<field name>: null` filter
 input DepartmentFilter {
   id: StringFilter
   name: StringFilter
-  products: ProductFilter
+  products: ProductSomeFilter
   and: [DepartmentFilter!]
   or: [DepartmentFilter!]
   not: DepartmentFilter
@@ -113,6 +113,21 @@ input ProductOrdering {
 
 input ProductReferenceInput {
   id: Int!
+}
+
+"""
+Predicate for the `Product` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input ProductSomeFilter {
+  some: ProductFilter
+  id: IntFilter
+  title: StringFilter
+  department: DepartmentFilter
+  and: [ProductFilter!]
+  or: [ProductFilter!]
+  not: ProductFilter
 }
 
 input ProductUpdateInput {

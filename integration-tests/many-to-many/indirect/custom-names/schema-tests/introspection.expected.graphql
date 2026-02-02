@@ -24,7 +24,7 @@ To check a field against null, use a `<field name>: null` filter
 input ArtistFilter {
   id: IntFilter
   name: StringFilter
-  aristsConcerts: ConcertArtistFilter
+  aristsConcerts: ConcertArtistSomeFilter
   and: [ArtistFilter!]
   or: [ArtistFilter!]
   not: ArtistFilter
@@ -121,6 +121,23 @@ input ConcertArtistReferenceInput {
   id: Int!
 }
 
+"""
+Predicate for the `ConcertArtist` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input ConcertArtistSomeFilter {
+  some: ConcertArtistFilter
+  id: IntFilter
+  concert: ConcertFilter
+  artist: ArtistFilter
+  rank: IntFilter
+  role: StringFilter
+  and: [ConcertArtistFilter!]
+  or: [ConcertArtistFilter!]
+  not: ConcertArtistFilter
+}
+
 input ConcertArtistUpdateInput {
   id: Int
   concert: ConcertReferenceInput
@@ -174,7 +191,7 @@ To check a field against null, use a `<field name>: null` filter
 input ConcertFilter {
   id: IntFilter
   title: StringFilter
-  concertArtists: ConcertArtistFilter
+  concertArtists: ConcertArtistSomeFilter
   venue: VenueFilter
   and: [ConcertFilter!]
   or: [ConcertFilter!]
@@ -189,6 +206,22 @@ input ConcertOrdering {
 
 input ConcertReferenceInput {
   id: Int!
+}
+
+"""
+Predicate for the `Concert` type parameter. 
+If a field is omitted, no filter is applied for that field.
+To check a field against null, use a `<field name>: null` filter
+"""
+input ConcertSomeFilter {
+  some: ConcertFilter
+  id: IntFilter
+  title: StringFilter
+  concertArtists: ConcertArtistSomeFilter
+  venue: VenueFilter
+  and: [ConcertFilter!]
+  or: [ConcertFilter!]
+  not: ConcertFilter
 }
 
 input ConcertUpdateInput {
@@ -273,7 +306,7 @@ To check a field against null, use a `<field name>: null` filter
 """
 input VenueFilter {
   id: IntFilter
-  concerts: ConcertFilter
+  concerts: ConcertSomeFilter
   and: [VenueFilter!]
   or: [VenueFilter!]
   not: VenueFilter

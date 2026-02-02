@@ -11,9 +11,13 @@ use std::collections::HashMap;
 
 use async_graphql_parser::{
     Pos, Positioned,
-    types::{FragmentDefinition, OperationDefinition, OperationType, VariableDefinition},
+    types::{
+        BaseType, FragmentDefinition, OperationDefinition, OperationType, TypeKind,
+        VariableDefinition,
+    },
 };
 use async_graphql_value::{ConstValue, Name};
+use serde::de::Error;
 use serde_json::{Map, Value};
 
 use crate::{
@@ -158,24 +162,107 @@ impl<'a> OperationValidator<'a> {
         variable_definitions
             .into_iter()
             .map(|variable_definition| {
-                let variable_name = variable_definition.node.name;
-                let variable_value = self.var_value(&variable_name)?;
+                let variable_name = variable_definition.node.name.clone();
+                let variable_value = self.var_value(&variable_definition)?;
                 Ok((variable_name.node, variable_value))
             })
             .collect()
     }
 
-    fn var_value(&self, name: &Positioned<Name>) -> Result<ConstValue, ValidationError> {
+    fn var_value(
+        &self,
+        variable_definition: &Positioned<VariableDefinition>,
+    ) -> Result<ConstValue, ValidationError> {
+        let variable_name = &variable_definition.node.name;
         let resolved = self
             .variables
             .as_ref()
-            .and_then(|variables| variables.get(name.node.as_str()))
+            .and_then(|variables| variables.get(variable_name.node.as_str()))
             .ok_or_else(|| {
-                ValidationError::VariableNotFound(name.node.as_str().to_string(), name.pos)
+                ValidationError::VariableNotFound(
+                    variable_name.node.as_str().to_string(),
+                    variable_name.pos,
+                )
             })?;
 
-        ConstValue::from_json(resolved.to_owned()).map_err(|e| {
-            ValidationError::MalformedVariable(name.node.as_str().to_string(), name.pos, e)
-        })
+        self.coerce_variable_value(
+            &variable_definition.node.var_type.node,
+            resolved.clone(),
+            variable_name,
+        )
+    }
+
+    fn coerce_variable_value(
+        &self,
+        expected_type: &async_graphql_parser::types::Type,
+        value: Value,
+        variable_name: &Positioned<Name>,
+    ) -> Result<ConstValue, ValidationError> {
+        let error = |message: String| {
+            ValidationError::MalformedVariable(
+                variable_name.node.as_str().to_string(),
+                variable_name.pos,
+                serde_json::Error::custom(message),
+            )
+        };
+
+        match &expected_type.base {
+            BaseType::List(elem_type) => match value {
+                Value::Array(values) => {
+                    let coerced_values = values
+                        .into_iter()
+                        .map(|value| {
+                            self.coerce_variable_value(elem_type.as_ref(), value, variable_name)
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(ConstValue::List(coerced_values))
+                }
+                _ => ConstValue::from_json(value).map_err(|e| {
+                    ValidationError::MalformedVariable(
+                        variable_name.node.as_str().to_string(),
+                        variable_name.pos,
+                        e,
+                    )
+                }),
+            },
+            BaseType::Named(type_name) => {
+                if let Some(type_definition) = self.schema.get_type_definition(type_name.as_str())
+                    && let TypeKind::Enum(enum_type) = &type_definition.kind
+                {
+                    return match value {
+                        Value::String(enum_value) => {
+                            let is_valid = enum_type
+                                .values
+                                .iter()
+                                .any(|value_def| value_def.node.value.node.as_str() == enum_value);
+
+                            if is_valid {
+                                Ok(ConstValue::Enum(Name::new(enum_value)))
+                            } else {
+                                Err(error(format!(
+                                    "Invalid enum value '{}' for type '{}'",
+                                    enum_value,
+                                    type_name.as_str()
+                                )))
+                            }
+                        }
+                        Value::Null => Ok(ConstValue::Null),
+                        _ => Err(error(format!(
+                            "Expected enum value for type '{}', got {}",
+                            type_name.as_str(),
+                            value
+                        ))),
+                    };
+                }
+
+                ConstValue::from_json(value).map_err(|e| {
+                    ValidationError::MalformedVariable(
+                        variable_name.node.as_str().to_string(),
+                        variable_name.pos,
+                        e,
+                    )
+                })
+            }
+        }
     }
 }
