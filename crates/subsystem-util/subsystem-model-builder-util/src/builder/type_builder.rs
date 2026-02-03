@@ -152,12 +152,12 @@ fn create_module_field(field: &ResolvedField, building: &SystemContextBuilding) 
                 module_name,
                 ..
             }) => match module_name {
-                Some(module_name) => FieldType::Plain(ModuleFieldType::Foreign(
-                    ForeignModuleType {
+                Some(module_name) => {
+                    FieldType::Plain(ModuleFieldType::Foreign(ForeignModuleType {
                         module_name: module_name.clone(),
                         return_type_name: type_name.clone(),
-                    },
-                )),
+                    }))
+                }
                 None => {
                     let type_id = building.types.get_id(type_name).unwrap();
 
