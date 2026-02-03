@@ -229,7 +229,7 @@ pub async fn construct_arg_sequence<'a>(
         })
         .collect::<HashMap<_, _>>();
 
-    futures::stream::iter(args.iter())
+    let mut resolved_args = futures::stream::iter(args.iter())
         .then(|arg| async {
             if arg.is_injected {
                 // handle injected arguments
@@ -312,5 +312,15 @@ pub async fn construct_arg_sequence<'a>(
         .collect::<Vec<Result<_, _>>>()
         .await
         .into_iter()
-        .collect::<Result<_, _>>()
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Append a final argument that contains all non-injected args as a single object.
+    // This keeps existing positional args intact while giving Deno resolvers a stable args map.
+    let mut args_object = serde_json::Map::new();
+    for (key, value) in mapped_args.into_iter() {
+        args_object.insert(key, value);
+    }
+    resolved_args.push(Arg::Serde(serde_json::Value::Object(args_object)));
+
+    Ok(resolved_args)
 }
