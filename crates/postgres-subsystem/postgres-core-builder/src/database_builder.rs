@@ -222,6 +222,10 @@ fn expand_type_relations(
         .fields
         .iter()
         .map(|field| -> Result<(), ModelBuildingError> {
+            if field.computed.is_some() {
+                return Ok(());
+            }
+
             let field_type = resolved_env
                 .get_by_key(&field.typ.innermost().type_name)
                 .ok_or_else(|| {
