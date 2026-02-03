@@ -14,7 +14,10 @@ use core_model::{
 use core_model_builder::{ast::ast_types::AstExpr, error::ModelBuildingError, typechecker::Typed};
 use subsystem_model_util::{
     access::Access,
-    types::{ModuleCompositeType, ModuleField, ModuleFieldType, ModuleType, ModuleTypeKind},
+    types::{
+        ForeignModuleType, ModuleCompositeType, ModuleField, ModuleFieldType, ModuleType,
+        ModuleTypeKind,
+    },
 };
 
 use crate::builder::resolved_builder::ResolvedFieldType;
@@ -144,14 +147,26 @@ fn create_module_field(field: &ResolvedField, building: &SystemContextBuilding) 
         building: &SystemContextBuilding,
     ) -> FieldType<ModuleFieldType> {
         match field_type {
-            FieldType::Plain(ResolvedFieldType { type_name, .. }) => {
-                let type_id = building.types.get_id(type_name).unwrap();
+            FieldType::Plain(ResolvedFieldType {
+                type_name,
+                module_name,
+                ..
+            }) => match module_name {
+                Some(module_name) => {
+                    FieldType::Plain(ModuleFieldType::Foreign(ForeignModuleType {
+                        module_name: module_name.clone(),
+                        return_type_name: type_name.clone(),
+                    }))
+                }
+                None => {
+                    let type_id = building.types.get_id(type_name).unwrap();
 
-                FieldType::Plain(ModuleFieldType {
-                    type_name: type_name.clone(),
-                    type_id,
-                })
-            }
+                    FieldType::Plain(ModuleFieldType::Own {
+                        type_name: type_name.clone(),
+                        type_id,
+                    })
+                }
+            },
             FieldType::Optional(underlying) => {
                 FieldType::Optional(Box::new(create_field_type(underlying, building)))
             }

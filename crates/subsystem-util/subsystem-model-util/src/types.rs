@@ -57,14 +57,21 @@ pub struct ModuleField {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ModuleFieldType {
-    pub type_id: SerializableSlabIndex<ModuleType>,
-    pub type_name: String,
+#[allow(clippy::large_enum_variant)]
+pub enum ModuleFieldType {
+    Own {
+        type_id: SerializableSlabIndex<ModuleType>,
+        type_name: String,
+    },
+    Foreign(ForeignModuleType),
 }
 
 impl Named for ModuleFieldType {
     fn name(&self) -> &str {
-        &self.type_name
+        match self {
+            ModuleFieldType::Own { type_name, .. } => type_name,
+            ModuleFieldType::Foreign(foreign) => foreign.name(),
+        }
     }
 }
 
