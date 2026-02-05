@@ -81,11 +81,12 @@ impl FieldResolver<Value, SystemResolutionError, ()> for Value {
         _resolution_context: &'a (),
         _request_context: &'a RequestContext<'a>,
     ) -> Result<Value, SystemResolutionError> {
+        let output_name = field.output_name();
         let field_name = field.name.as_str();
 
         if let Value::Object(map) = self {
-            if field_name == "__typename" {
-                return Ok(map.get(field_name).cloned().unwrap_or(Value::Null));
+            if let Some(value) = map.get(&output_name) {
+                return Ok(value.clone());
             }
             Ok(map.get(field_name).cloned().unwrap_or(Value::Null))
         } else {
