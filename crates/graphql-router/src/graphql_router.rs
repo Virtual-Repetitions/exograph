@@ -23,6 +23,7 @@ use core_resolver::introspection::definition::schema::Schema;
 use core_resolver::plugin::SubsystemGraphQLResolver;
 use core_router::SystemLoadingError;
 use http::StatusCode;
+use sentry::Level;
 
 use ::tracing::instrument;
 use async_graphql_parser::Pos;
@@ -83,6 +84,36 @@ impl GraphQLRouter {
     }
 }
 
+fn capture_graphql_error(
+    err: &SystemResolutionError,
+    request_context: &RequestContext<'_>,
+    status_code: StatusCode,
+) {
+    if sentry::Hub::current().client().is_none() {
+        return;
+    }
+
+    let request_head = request_context.get_head();
+    let message = err.user_error_message();
+
+    sentry::with_scope(
+        |scope| {
+            scope.set_tag("graphql.path", request_head.get_path());
+            scope.set_tag("http.method", request_head.get_method().as_str());
+            scope.set_tag("error.kind", format!("{:?}", err));
+            scope.set_tag("internal_request", request_context.is_internal().to_string());
+            scope.set_tag(
+                "auth_present",
+                request_context.is_authentication_info_present().to_string(),
+            );
+            scope.set_extra("status_code", status_code.as_u16().into());
+        },
+        || {
+            sentry::capture_message(&message, Level::Error);
+        },
+    );
+}
+
 #[async_trait]
 impl<'a> Router<RequestContext<'a>> for GraphQLRouter {
     /// Resolves an incoming query, returning a response stream containing JSON and a set
@@ -125,13 +156,20 @@ impl<'a> Router<RequestContext<'a>> for GraphQLRouter {
         )
         .await;
 
-        if let Err(SystemResolutionError::RequestError(e)) = response {
-            tracing::error!("Error while resolving request: {:?}", e);
-            return Some(ResponsePayload {
-                body: ResponseBody::None,
-                headers: Headers::new(),
-                status_code: StatusCode::BAD_REQUEST,
-            });
+        match &response {
+            Err(err @ SystemResolutionError::RequestError(e)) => {
+                tracing::error!("Error while resolving request: {:?}", e);
+                capture_graphql_error(err, request_context, StatusCode::BAD_REQUEST);
+                return Some(ResponsePayload {
+                    body: ResponseBody::None,
+                    headers: Headers::new(),
+                    status_code: StatusCode::BAD_REQUEST,
+                });
+            }
+            Err(err) => {
+                capture_graphql_error(err, request_context, StatusCode::OK);
+            }
+            Ok(_) => {}
         }
 
         let mut headers = if let Ok(ref response) = response {

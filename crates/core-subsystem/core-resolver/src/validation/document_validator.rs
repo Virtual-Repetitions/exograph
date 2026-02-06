@@ -305,6 +305,36 @@ mod tests {
 
     #[cfg_attr(not(target_family = "wasm"), tokio::test)]
     #[cfg_attr(target_family = "wasm", wasm_bindgen_test::wasm_bindgen_test)]
+    async fn enum_in_input_object_variable_is_valid() {
+        let schema = create_enum_test_schema().await;
+
+        let variables = create_variables(
+            r#"
+            {
+                "data": {
+                    "title": "EnumVar",
+                    "priority": "LOW"
+                }
+            }"#,
+        );
+
+        let validator = DocumentValidator::new(&schema, None, Some(variables), 10, 10);
+
+        let query = r#"
+            mutation($data: TaskCreationInput!) {
+                createTask(data: $data) {
+                    id
+                    priority
+                }
+            }
+        "#;
+
+        let result = validator.validate(create_query_document(query));
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[cfg_attr(not(target_family = "wasm"), tokio::test)]
+    #[cfg_attr(target_family = "wasm", wasm_bindgen_test::wasm_bindgen_test)]
     async fn invalid_subfield() {
         let schema = create_test_schema().await;
 
@@ -820,6 +850,44 @@ mod tests {
         "#;
         let postgres_subsystem =
             create_postgres_system_from_str(test_exo, "test.exo".to_string()).await;
+
+        Schema::new(
+            postgres_subsystem.graphql.as_ref().unwrap().schema_types(),
+            postgres_subsystem
+                .graphql
+                .as_ref()
+                .unwrap()
+                .schema_queries(),
+            postgres_subsystem
+                .graphql
+                .as_ref()
+                .unwrap()
+                .schema_mutations(),
+            Arc::new(None),
+        )
+    }
+
+    async fn create_enum_test_schema() -> Schema {
+        let test_exo = r#"
+            @postgres
+            module LogModule {
+                @access(true)
+                type Task {
+                    @pk id: Int = autoIncrement()
+                    title: String
+                    priority: Priority
+                }
+
+                enum Priority {
+                    LOW
+                    MEDIUM
+                    HIGH
+                }
+            }
+        "#;
+
+        let postgres_subsystem =
+            create_postgres_system_from_str(test_exo, "enum-test.exo".to_string()).await;
 
         Schema::new(
             postgres_subsystem.graphql.as_ref().unwrap().schema_types(),

@@ -17,6 +17,7 @@ postgres-resolver = { path = "../postgres-subsystem/postgres-resolver", features
 deno-resolver = { path = "../deno-subsystem/deno-resolver", optional = true }
 wasm-resolver = { path = "../wasm-subsystem/wasm-resolver", optional = true }
 exo-env = { path = "../../libs/exo-env" }
+sentry.workspace = true
 
 [features]
 static-postgres-resolver = ["postgres-resolver"]
