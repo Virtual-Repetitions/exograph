@@ -259,19 +259,18 @@ impl<'a> OperationValidator<'a> {
                                     let coerced_values = values
                                         .into_iter()
                                         .map(|(field_name, field_value)| {
-                                            let field_definition = input_object_type
-                                                .fields
-                                                .iter()
-                                                .find(|field| {
+                                            let field_definition =
+                                                input_object_type.fields.iter().find(|field| {
                                                     field.node.name.node.as_str() == field_name
                                                 });
 
                                             let coerced_value = match field_definition {
-                                                Some(field_definition) => self.coerce_variable_value(
-                                                    &field_definition.node.ty.node,
-                                                    field_value,
-                                                    variable_name,
-                                                )?,
+                                                Some(field_definition) => self
+                                                    .coerce_variable_value(
+                                                        &field_definition.node.ty.node,
+                                                        field_value,
+                                                        variable_name,
+                                                    )?,
                                                 None => ConstValue::from_json(field_value)
                                                     .map_err(|e| {
                                                         ValidationError::MalformedVariable(

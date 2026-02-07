@@ -101,7 +101,10 @@ fn capture_graphql_error(
             scope.set_tag("graphql.path", request_head.get_path());
             scope.set_tag("http.method", request_head.get_method().as_str());
             scope.set_tag("error.kind", format!("{:?}", err));
-            scope.set_tag("internal_request", request_context.is_internal().to_string());
+            scope.set_tag(
+                "internal_request",
+                request_context.is_internal().to_string(),
+            );
             scope.set_tag(
                 "auth_present",
                 request_context.is_authentication_info_present().to_string(),
