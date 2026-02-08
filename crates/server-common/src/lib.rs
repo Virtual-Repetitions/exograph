@@ -12,6 +12,8 @@ use std::{env, process::exit, sync::Arc};
 use thiserror::Error;
 
 use common::logging_tracing::{self, OtelError};
+
+mod sentry;
 use core_plugin_interface::interface::SubsystemLoader;
 
 use core_router::SystemLoadingError;
@@ -29,6 +31,7 @@ use system_router::{SystemRouter, create_system_router_from_file};
 /// - 1 - If the exo_ir file doesn't exist or can't be loaded.
 pub async fn init(env: Arc<dyn Environment>) -> Result<SystemRouter, ServerInitError> {
     logging_tracing::init(env.as_ref()).await?;
+    sentry::init(env.as_ref());
 
     println!(
         "Exograph server starting (version {})",

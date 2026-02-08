@@ -16,7 +16,7 @@ use async_graphql_parser::{
         VariableDefinition,
     },
 };
-use async_graphql_value::{ConstValue, Name};
+use async_graphql_value::{ConstValue, Name, indexmap::IndexMap};
 use serde::de::Error;
 use serde_json::{Map, Value};
 
@@ -226,33 +226,77 @@ impl<'a> OperationValidator<'a> {
                 }),
             },
             BaseType::Named(type_name) => {
-                if let Some(type_definition) = self.schema.get_type_definition(type_name.as_str())
-                    && let TypeKind::Enum(enum_type) = &type_definition.kind
-                {
-                    return match value {
-                        Value::String(enum_value) => {
-                            let is_valid = enum_type
-                                .values
-                                .iter()
-                                .any(|value_def| value_def.node.value.node.as_str() == enum_value);
+                if let Some(type_definition) = self.schema.get_type_definition(type_name.as_str()) {
+                    match &type_definition.kind {
+                        TypeKind::Enum(enum_type) => {
+                            return match value {
+                                Value::String(enum_value) => {
+                                    let is_valid = enum_type.values.iter().any(|value_def| {
+                                        value_def.node.value.node.as_str() == enum_value
+                                    });
 
-                            if is_valid {
-                                Ok(ConstValue::Enum(Name::new(enum_value)))
-                            } else {
-                                Err(error(format!(
-                                    "Invalid enum value '{}' for type '{}'",
-                                    enum_value,
-                                    type_name.as_str()
-                                )))
-                            }
+                                    if is_valid {
+                                        Ok(ConstValue::Enum(Name::new(enum_value)))
+                                    } else {
+                                        Err(error(format!(
+                                            "Invalid enum value '{}' for type '{}'",
+                                            enum_value,
+                                            type_name.as_str()
+                                        )))
+                                    }
+                                }
+                                Value::Null => Ok(ConstValue::Null),
+                                _ => Err(error(format!(
+                                    "Expected enum value for type '{}', got {}",
+                                    type_name.as_str(),
+                                    value
+                                ))),
+                            };
                         }
-                        Value::Null => Ok(ConstValue::Null),
-                        _ => Err(error(format!(
-                            "Expected enum value for type '{}', got {}",
-                            type_name.as_str(),
-                            value
-                        ))),
-                    };
+                        TypeKind::InputObject(input_object_type) => {
+                            return match value {
+                                Value::Object(values) => {
+                                    let coerced_values = values
+                                        .into_iter()
+                                        .map(|(field_name, field_value)| {
+                                            let field_definition =
+                                                input_object_type.fields.iter().find(|field| {
+                                                    field.node.name.node.as_str() == field_name
+                                                });
+
+                                            let coerced_value = match field_definition {
+                                                Some(field_definition) => self
+                                                    .coerce_variable_value(
+                                                        &field_definition.node.ty.node,
+                                                        field_value,
+                                                        variable_name,
+                                                    )?,
+                                                None => ConstValue::from_json(field_value)
+                                                    .map_err(|e| {
+                                                        ValidationError::MalformedVariable(
+                                                            variable_name.node.as_str().to_string(),
+                                                            variable_name.pos,
+                                                            e,
+                                                        )
+                                                    })?,
+                                            };
+
+                                            Ok((Name::new(field_name), coerced_value))
+                                        })
+                                        .collect::<Result<IndexMap<_, _>, ValidationError>>()?;
+
+                                    Ok(ConstValue::Object(coerced_values))
+                                }
+                                Value::Null => Ok(ConstValue::Null),
+                                _ => Err(error(format!(
+                                    "Expected input object for type '{}', got {}",
+                                    type_name.as_str(),
+                                    value
+                                ))),
+                            };
+                        }
+                        _ => {}
+                    }
                 }
 
                 ConstValue::from_json(value).map_err(|e| {

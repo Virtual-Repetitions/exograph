@@ -1,0 +1,36 @@
+
+stages:
+  - operation: |
+        mutation createTodoVar($data: TodoCreationInput!) {
+          createTodo(data: $data) {
+            id @bind(name: "varTodoId")
+            title
+            completed
+            priority
+          }
+        }
+    variable: |
+      {
+        "data": {
+          "title": "U1-T4-var-enum",
+          "completed": false,
+          "priority": "LOW",
+          "user": { "id": $.u1Id }
+        }
+      }
+    auth: |
+      {
+          "role": "admin",
+          "sub": null
+      }
+    response: |
+      {
+        "data": {
+          "createTodo": {
+            "id": $.varTodoId,
+            "title": "U1-T4-var-enum",
+            "completed": false,
+            "priority": "LOW"
+          }
+        }
+      }
