@@ -121,10 +121,10 @@ impl TransactionState {
             return Ok(());
         }
 
-        if let Some(ref client) = self.client {
-            if client.is_closed() {
-                self.client = None;
-            }
+        if let Some(ref client) = self.client
+            && client.is_closed()
+        {
+            self.client = None;
         }
 
         if self.client.is_none() {
