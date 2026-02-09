@@ -114,8 +114,9 @@ impl DatabasePool {
         config: Config,
         connect: impl Connect + 'static,
     ) -> Result<Self, DatabaseError> {
+        // Validate connections when checked out so stale connections are not reused.
         let manager_config = ManagerConfig {
-            recycling_method: RecyclingMethod::Fast,
+            recycling_method: RecyclingMethod::Verified,
         };
 
         let manager = Manager::from_connect(config, connect, manager_config);

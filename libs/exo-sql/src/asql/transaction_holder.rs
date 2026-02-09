@@ -117,7 +117,17 @@ impl TransactionState {
         &mut self,
         client_manager: &DatabaseClientManager,
     ) -> Result<(), DatabaseError> {
-        if self.client.is_none() && !self.finalized {
+        if self.finalized {
+            return Ok(());
+        }
+
+        if let Some(ref client) = self.client
+            && client.is_closed()
+        {
+            self.client = None;
+        }
+
+        if self.client.is_none() {
             self.client = Some(client_manager.get_client().await?);
         }
         Ok(())
