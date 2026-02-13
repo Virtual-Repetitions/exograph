@@ -15,7 +15,7 @@ use super::{creation::DatabaseCreation, database_client::DatabaseClient};
 use super::creation::TransactionMode;
 
 #[cfg(feature = "pool")]
-use super::database_pool::DatabasePool;
+use super::database_pool::{DatabasePool, PoolConfig, PoolStatus};
 
 pub enum DatabaseClientManager {
     #[cfg(feature = "pool")]
@@ -77,10 +77,20 @@ impl DatabaseClientManager {
             DatabaseClientManager::Direct(creation) => creation.get_client().await,
         }
     }
+
+    /// Get the current status of the connection pool (if using pooled connections)
+    #[cfg(feature = "pool")]
+    pub fn pool_status(&self) -> Option<PoolStatus> {
+        match self {
+            DatabaseClientManager::Pooled(pool) => Some(pool.status()),
+            DatabaseClientManager::Direct(_) => None,
+        }
+    }
 }
 
 #[cfg(feature = "postgres-url")]
 impl DatabaseClientManager {
+    /// Create a database client manager from URL with legacy pool_size parameter
     pub async fn from_url(
         url: &str,
         check_connection: bool,
@@ -89,12 +99,42 @@ impl DatabaseClientManager {
     ) -> Result<Self, DatabaseError> {
         #[cfg(feature = "pool")]
         {
-            Self::from_url_pooled(url, check_connection, pool_size, transaction_mode).await
+            let pool_config = PoolConfig {
+                max_size: pool_size,
+                ..Default::default()
+            };
+            Self::from_url_with_pool_config(url, check_connection, pool_config, transaction_mode)
+                .await
         }
         #[cfg(not(feature = "pool"))]
         {
             Self::from_url_direct(url, check_connection, transaction_mode).await
         }
+    }
+
+    /// Create a database client manager from URL with full pool configuration
+    #[cfg(feature = "pool")]
+    pub async fn from_url_with_pool_config(
+        url: &str,
+        check_connection: bool,
+        pool_config: PoolConfig,
+        transaction_mode: TransactionMode,
+    ) -> Result<Self, DatabaseError> {
+        let creation = DatabaseCreation::Url {
+            url: url.to_string(),
+            transaction_mode,
+        };
+        let res = Ok(Self::Pooled(
+            DatabasePool::create_with_config(creation, pool_config).await?,
+        ));
+
+        if let Ok(ref res) = res
+            && check_connection
+        {
+            let _ = res.get_client().await?;
+        }
+
+        res
     }
 
     pub async fn from_url_direct(
@@ -117,6 +157,7 @@ impl DatabaseClientManager {
         res
     }
 
+    /// Legacy method - use from_url_with_pool_config for full configuration
     #[cfg(feature = "pool")]
     pub async fn from_url_pooled(
         url: &str,
@@ -124,20 +165,10 @@ impl DatabaseClientManager {
         pool_size: Option<usize>,
         transaction_mode: TransactionMode,
     ) -> Result<Self, DatabaseError> {
-        let creation = DatabaseCreation::Url {
-            url: url.to_string(),
-            transaction_mode,
+        let pool_config = PoolConfig {
+            max_size: pool_size,
+            ..Default::default()
         };
-        let res = Ok(Self::Pooled(
-            DatabasePool::create(creation, pool_size).await?,
-        ));
-
-        if let Ok(ref res) = res
-            && check_connection
-        {
-            let _ = res.get_client().await?;
-        }
-
-        res
+        Self::from_url_with_pool_config(url, check_connection, pool_config, transaction_mode).await
     }
 }
