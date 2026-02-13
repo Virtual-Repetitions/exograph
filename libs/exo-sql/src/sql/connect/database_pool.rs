@@ -13,7 +13,9 @@ use std::time::Duration;
 
 #[cfg(feature = "postgres-url")]
 use deadpool_postgres::ConfigConnectImpl;
-use deadpool_postgres::{Connect, Hook, HookError, Manager, ManagerConfig, Pool, RecyclingMethod, Runtime};
+use deadpool_postgres::{
+    Connect, Hook, HookError, Manager, ManagerConfig, Pool, RecyclingMethod, Runtime,
+};
 
 use tokio_postgres::Config;
 
@@ -160,7 +162,8 @@ impl DatabasePool {
                     .any(|host| matches!(host, tokio_postgres::config::Host::Tcp(_)));
 
                 if has_tcp_hosts {
-                    Self::from_connect_with_config(pool_config, config, ConfigConnectImpl { tls }).await
+                    Self::from_connect_with_config(pool_config, config, ConfigConnectImpl { tls })
+                        .await
                 } else {
                     Self::from_connect_with_config(
                         pool_config,
@@ -211,8 +214,7 @@ impl DatabasePool {
         let manager = Manager::from_connect(config, connect, manager_config);
 
         // Build pool with timeouts - requires runtime for timeout support
-        let mut builder = Pool::builder(manager)
-            .runtime(Runtime::Tokio1);
+        let mut builder = Pool::builder(manager).runtime(Runtime::Tokio1);
 
         // Apply max_size
         if let Some(max_size) = pool_config.max_size {
@@ -258,9 +260,7 @@ impl DatabasePool {
             "Creating database connection pool"
         );
 
-        let pool = builder
-            .build()
-            .expect("Failed to create DB pool");
+        let pool = builder.build().expect("Failed to create DB pool");
 
         let db = Self { pool };
 

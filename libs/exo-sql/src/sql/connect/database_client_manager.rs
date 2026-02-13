@@ -103,7 +103,8 @@ impl DatabaseClientManager {
                 max_size: pool_size,
                 ..Default::default()
             };
-            Self::from_url_with_pool_config(url, check_connection, pool_config, transaction_mode).await
+            Self::from_url_with_pool_config(url, check_connection, pool_config, transaction_mode)
+                .await
         }
         #[cfg(not(feature = "pool"))]
         {

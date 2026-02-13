@@ -33,18 +33,14 @@ pub async fn create_database_executor(
                 max_size: env
                     .get(EXO_CONNECTION_POOL_SIZE)
                     .and_then(|s| s.parse().ok()),
-                wait_timeout_secs: env
-                    .get(EXO_POOL_WAIT_TIMEOUT)
-                    .and_then(|s| s.parse().ok()),
+                wait_timeout_secs: env.get(EXO_POOL_WAIT_TIMEOUT).and_then(|s| s.parse().ok()),
                 create_timeout_secs: env
                     .get(EXO_POOL_CREATE_TIMEOUT)
                     .and_then(|s| s.parse().ok()),
                 recycle_timeout_secs: env
                     .get(EXO_POOL_RECYCLE_TIMEOUT)
                     .and_then(|s| s.parse().ok()),
-                max_lifetime_secs: env
-                    .get(EXO_POOL_MAX_LIFETIME)
-                    .and_then(|s| s.parse().ok()),
+                max_lifetime_secs: env.get(EXO_POOL_MAX_LIFETIME).and_then(|s| s.parse().ok()),
             };
 
             let check_connection = env
