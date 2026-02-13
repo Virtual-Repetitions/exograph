@@ -91,5 +91,8 @@ pub use sql::{
     vector::{DEFAULT_VECTOR_SIZE, VectorDistanceFunction},
 };
 
+#[cfg(feature = "pool")]
+pub use sql::connect::database_pool::{PoolConfig, PoolStatus};
+
 #[cfg(feature = "bigdecimal")]
 pub use pg_bigdecimal::BigDecimal;

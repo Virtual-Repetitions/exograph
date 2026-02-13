@@ -23,6 +23,12 @@ pub const DATABASE_URL: &str = "DATABASE_URL";
 pub const EXO_CONNECTION_POOL_SIZE: &str = "EXO_CONNECTION_POOL_SIZE";
 pub const EXO_CHECK_CONNECTION_ON_STARTUP: &str = "EXO_CHECK_CONNECTION_ON_STARTUP";
 
+// Connection pool timeout settings (in seconds)
+pub const EXO_POOL_WAIT_TIMEOUT: &str = "EXO_POOL_WAIT_TIMEOUT"; // Timeout waiting for a connection from pool (default: 30s)
+pub const EXO_POOL_CREATE_TIMEOUT: &str = "EXO_POOL_CREATE_TIMEOUT"; // Timeout creating a new connection (default: 10s)
+pub const EXO_POOL_RECYCLE_TIMEOUT: &str = "EXO_POOL_RECYCLE_TIMEOUT"; // Timeout recycling/validating a connection (default: 5s)
+pub const EXO_POOL_MAX_LIFETIME: &str = "EXO_POOL_MAX_LIFETIME"; // Max lifetime of a connection in seconds (default: 1800 = 30min)
+
 pub const EXO_SERVER_PORT: &str = "EXO_SERVER_PORT";
 
 pub const EXO_ENABLE_OTEL: &str = "EXO_ENABLE_OTEL";

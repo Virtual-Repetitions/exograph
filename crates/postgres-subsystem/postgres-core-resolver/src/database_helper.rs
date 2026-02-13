@@ -1,5 +1,5 @@
 use exo_env::Environment;
-use exo_sql::{DatabaseClientManager, DatabaseExecutor, TransactionMode};
+use exo_sql::{DatabaseClientManager, DatabaseExecutor};
 use thiserror::Error;
 use tokio_postgres::{Row, types::FromSqlOwned};
 
@@ -16,8 +16,10 @@ pub async fn create_database_executor(
         {
             use common::env_const::{
                 DATABASE_URL, EXO_CHECK_CONNECTION_ON_STARTUP, EXO_CONNECTION_POOL_SIZE,
-                EXO_POSTGRES_READ_WRITE, EXO_POSTGRES_URL,
+                EXO_POOL_CREATE_TIMEOUT, EXO_POOL_MAX_LIFETIME, EXO_POOL_RECYCLE_TIMEOUT,
+                EXO_POOL_WAIT_TIMEOUT, EXO_POSTGRES_READ_WRITE, EXO_POSTGRES_URL,
             };
+            use exo_sql::PoolConfig;
 
             let url = env
                 .get(EXO_POSTGRES_URL)
@@ -25,9 +27,26 @@ pub async fn create_database_executor(
                 .ok_or_else(|| {
                     DatabaseHelperError::Config("Env EXO_POSTGRES_URL not set".to_string())
                 })?;
-            let pool_size: Option<usize> = env
-                .get(EXO_CONNECTION_POOL_SIZE)
-                .and_then(|s| s.parse().ok());
+
+            // Build pool configuration from environment variables
+            let pool_config = PoolConfig {
+                max_size: env
+                    .get(EXO_CONNECTION_POOL_SIZE)
+                    .and_then(|s| s.parse().ok()),
+                wait_timeout_secs: env
+                    .get(EXO_POOL_WAIT_TIMEOUT)
+                    .and_then(|s| s.parse().ok()),
+                create_timeout_secs: env
+                    .get(EXO_POOL_CREATE_TIMEOUT)
+                    .and_then(|s| s.parse().ok()),
+                recycle_timeout_secs: env
+                    .get(EXO_POOL_RECYCLE_TIMEOUT)
+                    .and_then(|s| s.parse().ok()),
+                max_lifetime_secs: env
+                    .get(EXO_POOL_MAX_LIFETIME)
+                    .and_then(|s| s.parse().ok()),
+            };
+
             let check_connection = env
                 .enabled(EXO_CHECK_CONNECTION_ON_STARTUP, true)
                 .map_err(|e| DatabaseHelperError::BoxedError(Box::new(e)))?;
@@ -40,9 +59,14 @@ pub async fn create_database_executor(
                 TransactionMode::ReadOnly
             };
 
-            DatabaseClientManager::from_url(&url, check_connection, pool_size, transaction_mode)
-                .await
-                .map_err(|e| DatabaseHelperError::BoxedError(Box::new(e)))?
+            DatabaseClientManager::from_url_with_pool_config(
+                &url,
+                check_connection,
+                pool_config,
+                transaction_mode,
+            )
+            .await
+            .map_err(|e| DatabaseHelperError::BoxedError(Box::new(e)))?
         }
 
         #[cfg(not(feature = "network"))]

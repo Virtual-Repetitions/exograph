@@ -1,5 +1,5 @@
 [workspace.package]
-version = "0.30.0"
+version = "0.30.1"
 edition = "2024"
 
 # See https://github.com/mozilla/application-services/blob/main/Cargo.toml for the reasons why we use this structure
@@ -115,7 +115,7 @@ thiserror = "2.0.16"
 tracing = "0.1.41"
 tokio = "1"
 tokio-postgres = { version = "0.7.12", default-features = false }
-deadpool-postgres = { version = "0.14.1", default-features = false }
+deadpool-postgres = { version = "0.14.1", default-features = false, features = ["rt_tokio_1"] }
 tree-sitter = { git = "https://github.com/exograph/tree-sitter-c2rust.git", branch = "generate-loading-feature-flag" }
 tree-sitter-c2rust = "0.25.1"
 tree-sitter-generate = { git = "https://github.com/exograph/tree-sitter-c2rust.git", branch = "generate-loading-feature-flag" }
