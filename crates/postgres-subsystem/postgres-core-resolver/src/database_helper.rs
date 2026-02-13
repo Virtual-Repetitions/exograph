@@ -1,5 +1,5 @@
 use exo_env::Environment;
-use exo_sql::{DatabaseClientManager, DatabaseExecutor};
+use exo_sql::{DatabaseClientManager, DatabaseExecutor, TransactionMode};
 use thiserror::Error;
 use tokio_postgres::{Row, types::FromSqlOwned};
 
