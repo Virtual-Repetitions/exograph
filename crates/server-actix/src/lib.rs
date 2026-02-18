@@ -185,7 +185,7 @@ fn expand_env_placeholders(raw: &str, env: &dyn Environment) -> Result<String, S
         if ch == '$' && chars.peek() == Some(&'{') {
             chars.next();
             let mut name = String::new();
-            while let Some(next) = chars.next() {
+            for next in chars.by_ref() {
                 if next == '}' {
                     break;
                 }
