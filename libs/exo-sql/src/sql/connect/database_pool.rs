@@ -118,7 +118,21 @@ impl DatabasePool {
     }
 
     pub async fn get_client(&self) -> Result<DatabaseClient, DatabaseError> {
-        Ok(DatabaseClient::Pooled(self.pool.get().await?))
+        match self.pool.get().await {
+            Ok(client) => Ok(DatabaseClient::Pooled(client)),
+            Err(err) => {
+                let status = self.pool.status();
+                tracing::error!(
+                    error = %err,
+                    pool_max_size = status.max_size,
+                    pool_size = status.size,
+                    pool_available = status.available,
+                    pool_waiting = status.waiting,
+                    "Failed to acquire database connection from pool"
+                );
+                Err(err.into())
+            }
+        }
     }
 
     /// Get the current status of the connection pool

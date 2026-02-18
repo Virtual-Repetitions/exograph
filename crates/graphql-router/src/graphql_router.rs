@@ -39,6 +39,14 @@ use exo_env::Environment;
 
 use crate::system_loader::SystemLoader;
 
+fn extract_request_id(request_head: &(dyn RequestHead + Sync)) -> Option<String> {
+    request_head
+        .get_header("x-request-id")
+        .or_else(|| request_head.get_header("x-correlation-id"))
+        .or_else(|| request_head.get_header("x-amzn-trace-id"))
+        .or_else(|| request_head.get_header("traceparent"))
+}
+
 pub struct GraphQLRouter {
     resolver: Arc<GraphQLSystemResolver>,
     env: Arc<dyn Environment>,
@@ -100,6 +108,9 @@ fn capture_graphql_error(
         |scope| {
             scope.set_tag("graphql.path", request_head.get_path());
             scope.set_tag("http.method", request_head.get_method().as_str());
+            if let Some(request_id) = extract_request_id(request_head) {
+                scope.set_tag("request_id", request_id);
+            }
             scope.set_tag("error.kind", format!("{:?}", err));
             scope.set_tag(
                 "internal_request",
@@ -135,6 +146,18 @@ impl<'a> Router<RequestContext<'a>> for GraphQLRouter {
         if !self.suitable(request_head) {
             return None;
         }
+
+        let request_id = extract_request_id(request_head);
+        let request_span = tracing::info_span!(
+            "graphql_request",
+            request_id = request_id.as_deref().unwrap_or(""),
+            method = %request_head.get_method(),
+            path = %request_head.get_path(),
+            client_ip = ?request_head.get_ip(),
+            internal = request_context.is_internal()
+        );
+        let _request_guard = request_span.enter();
+        tracing::info!("GraphQL request received");
 
         let playground_request = request_head
             .get_header("_exo_playground")
