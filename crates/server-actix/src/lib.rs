@@ -36,6 +36,10 @@ use common::{
 use request::ActixRequestHead;
 use serde_json::{Value, json};
 
+const EXO_HEALTHZ_QUERY: &str = "EXO_HEALTHZ_QUERY";
+const EXO_HEALTHZ_VARIABLES: &str = "EXO_HEALTHZ_VARIABLES";
+const EXO_HEALTHZ_RESPONSE_JSON_POINTER: &str = "EXO_HEALTHZ_RESPONSE_JSON_POINTER";
+
 macro_rules! error_msg {
     ($msg:literal) => {
         concat!("{\"errors\": [{\"message\":\"", $msg, "\"}]}").as_bytes()
@@ -64,6 +68,7 @@ pub fn configure_router(
             .app_data(web::Data::new(GraphQLPaths {
                 graphql_http_path: graphql_http_path.clone(),
             }))
+            .app_data(web::Data::new(env.clone()))
             .app_data(web::Data::new(endpoint_url))
             .default_service(web::to(resolve));
     }
@@ -79,6 +84,7 @@ async fn resolve(
     query: web::Query<Value>,
     endpoint_url: web::Data<Option<Url>>,
     system_router: web::Data<SystemRouter>,
+    env: web::Data<Arc<dyn Environment>>,
 ) -> impl Responder {
     if http_request.path() == "/healthz" && http_request.method() == actix_web::http::Method::GET {
         let graphql_http_path = http_request
@@ -86,7 +92,12 @@ async fn resolve(
             .map(|paths| paths.graphql_http_path.clone())
             .unwrap_or_else(|| "/graphql".to_string());
 
-        return handle_healthz(system_router.get_ref(), &graphql_http_path).await;
+        return handle_healthz(
+            system_router.get_ref(),
+            env.as_ref().as_ref(),
+            &graphql_http_path,
+        )
+        .await;
     }
 
     match endpoint_url.as_ref() {
@@ -116,8 +127,45 @@ async fn resolve(
     }
 }
 
-async fn handle_healthz(system_router: &SystemRouter, graphql_http_path: &str) -> HttpResponse {
-    match execute_graphql_health_check(system_router, graphql_http_path).await {
+async fn handle_healthz(
+    system_router: &SystemRouter,
+    env: &dyn Environment,
+    graphql_http_path: &str,
+) -> HttpResponse {
+    let query = env
+        .get(EXO_HEALTHZ_QUERY)
+        .unwrap_or_else(|| "{ __typename }".to_string());
+    let variables = match env.get(EXO_HEALTHZ_VARIABLES) {
+        Some(raw) => match expand_env_placeholders(&raw, env) {
+            Ok(expanded) => match serde_json::from_str::<Value>(&expanded) {
+                Ok(value) => Some(value),
+                Err(err) => {
+                    return HttpResponse::ServiceUnavailable().json(json!({
+                        "status": "error",
+                        "message": format!("Invalid {} JSON: {}", EXO_HEALTHZ_VARIABLES, err),
+                    }));
+                }
+            },
+            Err(err) => {
+                return HttpResponse::ServiceUnavailable().json(json!({
+                    "status": "error",
+                    "message": err,
+                }));
+            }
+        },
+        None => None,
+    };
+    let response_pointer = env.get(EXO_HEALTHZ_RESPONSE_JSON_POINTER);
+
+    match execute_graphql_health_check(
+        system_router,
+        graphql_http_path,
+        &query,
+        variables,
+        response_pointer.as_deref(),
+    )
+    .await
+    {
         Ok(()) => HttpResponse::Ok().json(json!({ "status": "ok" })),
         Err(err) => {
             tracing::error!("GraphQL health check failed: {}", err);
@@ -129,9 +177,46 @@ async fn handle_healthz(system_router: &SystemRouter, graphql_http_path: &str) -
     }
 }
 
+fn expand_env_placeholders(raw: &str, env: &dyn Environment) -> Result<String, String> {
+    let mut output = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '$' && chars.peek() == Some(&'{') {
+            chars.next();
+            let mut name = String::new();
+            for next in chars.by_ref() {
+                if next == '}' {
+                    break;
+                }
+                name.push(next);
+            }
+
+            if name.is_empty() {
+                return Err("Invalid EXO_HEALTHZ_VARIABLES placeholder: empty name".to_string());
+            }
+
+            let value = env.get(&name).ok_or_else(|| {
+                format!(
+                    "Missing env var {} referenced by {}",
+                    name, EXO_HEALTHZ_VARIABLES
+                )
+            })?;
+            output.push_str(&value);
+        } else {
+            output.push(ch);
+        }
+    }
+
+    Ok(output)
+}
+
 async fn execute_graphql_health_check(
     system_router: &SystemRouter,
     graphql_http_path: &str,
+    query: &str,
+    variables: Option<Value>,
+    response_pointer: Option<&str>,
 ) -> Result<(), String> {
     let mut headers: HashMap<String, Vec<String>> = HashMap::new();
     headers.insert(
@@ -149,15 +234,47 @@ async fn execute_graphql_health_check(
         None,
     );
 
-    let body = json!({
-        "query": "{ __typename }"
-    });
+    let body = match variables {
+        Some(variables) => json!({
+            "query": query,
+            "variables": variables,
+        }),
+        None => json!({
+            "query": query,
+        }),
+    };
 
     let payload = MemoryRequestPayload::new(body, request_head);
     let request_payload = PlainRequestPayload::external(Box::new(payload));
 
     match system_router.route(&request_payload).await {
-        Some(response) if response.status_code.is_success() => Ok(()),
+        Some(response) if response.status_code.is_success() => {
+            let response_json = response
+                .body
+                .to_json()
+                .await
+                .map_err(|err| format!("Invalid GraphQL response body: {}", err))?;
+
+            if response_json.get("errors").is_some() {
+                return Err("GraphQL response contains errors".to_string());
+            }
+
+            if let Some(pointer) = response_pointer {
+                match response_json.pointer(pointer) {
+                    Some(Value::Bool(true)) => Ok(()),
+                    Some(other) => Err(format!(
+                        "Health check JSON pointer {} did not evaluate to true (got {})",
+                        pointer, other
+                    )),
+                    None => Err(format!(
+                        "Health check JSON pointer {} not found in response",
+                        pointer
+                    )),
+                }
+            } else {
+                Ok(())
+            }
+        }
         Some(response) => Err(format!(
             "Unexpected status {} from GraphQL endpoint",
             response.status_code
