@@ -9,8 +9,8 @@
 
 use std::fmt::Debug;
 
-use tokio_postgres::{GenericClient, Row};
-use tracing::{error, info, instrument};
+use tokio_postgres::{GenericClient, Row, error::SqlState};
+use tracing::{error, info, instrument, warn};
 
 use crate::{
     Column, Database, Predicate, SQLParamContainer, TableId,
@@ -208,10 +208,127 @@ async fn run_query(
         params.iter().map(|(p, _)| p).collect::<Vec<_>>()
     );
 
-    client.query_typed(&stmt, &params[..]).await.map_err(|e| {
-        error!("Failed to execute query: {e:?}");
-        DatabaseError::Delegate(e).with_context("Database operation failed".into())
-    })
+    let retry_config = RetryConfig::from_env();
+    let allow_retry = retry_config.max_retries > 0 && operation_is_read_only(&operation);
+
+    let mut attempt: u32 = 0;
+    loop {
+        let result = client.query_typed(&stmt, &params[..]).await;
+        match result {
+            Ok(rows) => return Ok(rows),
+            Err(err) => {
+                let retryable = allow_retry && is_retryable_db_error(&err);
+                log_query_error(&stmt, &err);
+
+                if !retryable || attempt >= retry_config.max_retries {
+                    return Err(DatabaseError::Delegate(err)
+                        .with_context("Database operation failed".into()));
+                }
+
+                attempt += 1;
+                let backoff_ms = retry_backoff_ms(
+                    attempt,
+                    retry_config.base_backoff_ms,
+                    retry_config.max_backoff_ms,
+                );
+                warn!(attempt, backoff_ms, "Retrying transient database error");
+                tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RetryConfig {
+    max_retries: u32,
+    base_backoff_ms: u64,
+    max_backoff_ms: u64,
+}
+
+impl RetryConfig {
+    fn from_env() -> Self {
+        let max_retries = std::env::var("EXO_DB_RETRY_MAX")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(2);
+        let base_backoff_ms = std::env::var("EXO_DB_RETRY_BASE_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(50);
+        let max_backoff_ms = std::env::var("EXO_DB_RETRY_MAX_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(500);
+
+        Self {
+            max_retries,
+            base_backoff_ms,
+            max_backoff_ms,
+        }
+    }
+}
+
+fn retry_backoff_ms(attempt: u32, base_ms: u64, max_ms: u64) -> u64 {
+    use rand::Rng;
+
+    let exp = base_ms.saturating_mul(2u64.saturating_pow(attempt.saturating_sub(1)));
+    let capped = exp.min(max_ms).max(1);
+    let jitter = rand::rng().random_range(0..=capped / 2);
+    (capped / 2) + jitter
+}
+
+fn operation_is_read_only(operation: &SQLOperation<'_>) -> bool {
+    matches!(operation, SQLOperation::Select(_))
+}
+
+fn is_retryable_db_error(err: &tokio_postgres::Error) -> bool {
+    if let Some(db_error) = err.as_db_error() {
+        let code = db_error.code();
+        return *code == SqlState::ADMIN_SHUTDOWN
+            || *code == SqlState::CRASH_SHUTDOWN
+            || *code == SqlState::CANNOT_CONNECT_NOW
+            || *code == SqlState::CONNECTION_FAILURE
+            || *code == SqlState::CONNECTION_DOES_NOT_EXIST;
+    }
+    false
+}
+
+fn log_query_error(stmt: &str, err: &tokio_postgres::Error) {
+    if let Some(db_error) = err.as_db_error() {
+        let code = db_error.code();
+        error!(
+            event = "db_failure",
+            sqlstate = %code.code(),
+            severity = db_error.severity(),
+            message = %db_error.message(),
+            detail = ?db_error.detail(),
+            hint = ?db_error.hint(),
+            schema = ?db_error.schema(),
+            table = ?db_error.table(),
+            column = ?db_error.column(),
+            constraint = ?db_error.constraint(),
+            statement = %stmt,
+            "Postgres error executing query"
+        );
+
+        if *code == SqlState::ADMIN_SHUTDOWN
+            || *code == SqlState::CRASH_SHUTDOWN
+            || *code == SqlState::CANNOT_CONNECT_NOW
+            || *code == SqlState::CONNECTION_FAILURE
+            || *code == SqlState::CONNECTION_DOES_NOT_EXIST
+        {
+            warn!(
+                sqlstate = %code.code(),
+                "Transient Postgres connection error detected (likely restart or disconnect)"
+            );
+        }
+    } else {
+        error!(
+            error = %err,
+            statement = %stmt,
+            "Postgres client error executing query"
+        );
+    }
 }
 
 #[derive(Debug)]

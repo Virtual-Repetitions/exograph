@@ -29,6 +29,11 @@ pub const EXO_POOL_CREATE_TIMEOUT: &str = "EXO_POOL_CREATE_TIMEOUT"; // Timeout 
 pub const EXO_POOL_RECYCLE_TIMEOUT: &str = "EXO_POOL_RECYCLE_TIMEOUT"; // Timeout recycling/validating a connection (default: 5s)
 pub const EXO_POOL_MAX_LIFETIME: &str = "EXO_POOL_MAX_LIFETIME"; // Max lifetime of a connection in seconds (default: 1800 = 30min)
 
+// Database retry settings (applies to SELECTs only)
+pub const EXO_DB_RETRY_MAX: &str = "EXO_DB_RETRY_MAX"; // Max retries for transient DB errors (default: 2)
+pub const EXO_DB_RETRY_BASE_MS: &str = "EXO_DB_RETRY_BASE_MS"; // Base backoff in ms (default: 50)
+pub const EXO_DB_RETRY_MAX_MS: &str = "EXO_DB_RETRY_MAX_MS"; // Max backoff in ms (default: 500)
+
 pub const EXO_SERVER_PORT: &str = "EXO_SERVER_PORT";
 
 pub const EXO_ENABLE_OTEL: &str = "EXO_ENABLE_OTEL";
