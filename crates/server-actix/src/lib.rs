@@ -133,7 +133,9 @@ async fn handle_healthz(
     graphql_http_path: &str,
 ) -> HttpResponse {
     let default_query = "{ __typename }".to_string();
-    let mut query = env.get(EXO_HEALTHZ_QUERY).unwrap_or_else(|| default_query.clone());
+    let mut query = env
+        .get(EXO_HEALTHZ_QUERY)
+        .unwrap_or_else(|| default_query.clone());
     let mut response_pointer = env.get(EXO_HEALTHZ_RESPONSE_JSON_POINTER);
     let variables = match env.get(EXO_HEALTHZ_VARIABLES) {
         Some(raw) => match expand_env_placeholders(&raw, env) {
@@ -151,10 +153,7 @@ async fn handle_healthz(
                 }
             },
             Err(err) => {
-                tracing::warn!(
-                    "{}; falling back to default health check",
-                    err
-                );
+                tracing::warn!("{}; falling back to default health check", err);
                 query = default_query;
                 response_pointer = None;
                 None
