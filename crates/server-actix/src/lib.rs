@@ -135,6 +135,7 @@ async fn handle_healthz(
     let default_query = "{ __typename }".to_string();
     let mut query = env
         .get(EXO_HEALTHZ_QUERY)
+        .map(|value| value.replace("\\$", "$"))
         .unwrap_or_else(|| default_query.clone());
     let mut response_pointer = env.get(EXO_HEALTHZ_RESPONSE_JSON_POINTER);
     let variables = match env.get(EXO_HEALTHZ_VARIABLES) {
