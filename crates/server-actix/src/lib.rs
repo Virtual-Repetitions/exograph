@@ -137,6 +137,7 @@ async fn handle_healthz(
         .get(EXO_HEALTHZ_QUERY)
         .map(|value| value.replace("\\$", "$"))
         .unwrap_or_else(|| default_query.clone());
+    let mut used_default_query = query == default_query;
     let mut response_pointer = env.get(EXO_HEALTHZ_RESPONSE_JSON_POINTER);
     let variables = match env.get(EXO_HEALTHZ_VARIABLES) {
         Some(raw) => match expand_env_placeholders(&raw, env) {
@@ -149,6 +150,7 @@ async fn handle_healthz(
                         err
                     );
                     query = default_query;
+                    used_default_query = true;
                     response_pointer = None;
                     None
                 }
@@ -156,6 +158,7 @@ async fn handle_healthz(
             Err(err) => {
                 tracing::warn!("{}; falling back to default health check", err);
                 query = default_query;
+                used_default_query = true;
                 response_pointer = None;
                 None
             }
@@ -167,6 +170,7 @@ async fn handle_healthz(
                     EXO_HEALTHZ_VARIABLES
                 );
                 query = default_query;
+                used_default_query = true;
                 response_pointer = None;
             }
             None
@@ -182,12 +186,18 @@ async fn handle_healthz(
     )
     .await
     {
-        Ok(()) => HttpResponse::Ok().json(json!({ "status": "ok" })),
+        Ok(()) => HttpResponse::Ok().json(json!({
+            "status": "ok",
+            "check": "graphql",
+            "query": if used_default_query { "default" } else { "custom" },
+        })),
         Err(err) => {
             tracing::error!("GraphQL health check failed: {}", err);
             HttpResponse::ServiceUnavailable().json(json!({
                 "status": "error",
                 "message": err,
+                "check": "graphql",
+                "query": if used_default_query { "default" } else { "custom" },
             }))
         }
     }
