@@ -132,30 +132,46 @@ async fn handle_healthz(
     env: &dyn Environment,
     graphql_http_path: &str,
 ) -> HttpResponse {
-    let query = env
-        .get(EXO_HEALTHZ_QUERY)
-        .unwrap_or_else(|| "{ __typename }".to_string());
+    let default_query = "{ __typename }".to_string();
+    let mut query = env.get(EXO_HEALTHZ_QUERY).unwrap_or_else(|| default_query.clone());
+    let mut response_pointer = env.get(EXO_HEALTHZ_RESPONSE_JSON_POINTER);
     let variables = match env.get(EXO_HEALTHZ_VARIABLES) {
         Some(raw) => match expand_env_placeholders(&raw, env) {
             Ok(expanded) => match serde_json::from_str::<Value>(&expanded) {
                 Ok(value) => Some(value),
                 Err(err) => {
-                    return HttpResponse::ServiceUnavailable().json(json!({
-                        "status": "error",
-                        "message": format!("Invalid {} JSON: {}", EXO_HEALTHZ_VARIABLES, err),
-                    }));
+                    tracing::warn!(
+                        "Invalid {} JSON; falling back to default health check: {}",
+                        EXO_HEALTHZ_VARIABLES,
+                        err
+                    );
+                    query = default_query;
+                    response_pointer = None;
+                    None
                 }
             },
             Err(err) => {
-                return HttpResponse::ServiceUnavailable().json(json!({
-                    "status": "error",
-                    "message": err,
-                }));
+                tracing::warn!(
+                    "{}; falling back to default health check",
+                    err
+                );
+                query = default_query;
+                response_pointer = None;
+                None
             }
         },
-        None => None,
+        None => {
+            if env.get(EXO_HEALTHZ_QUERY).is_some() {
+                tracing::warn!(
+                    "{} not set; falling back to default health check",
+                    EXO_HEALTHZ_VARIABLES
+                );
+                query = default_query;
+                response_pointer = None;
+            }
+            None
+        }
     };
-    let response_pointer = env.get(EXO_HEALTHZ_RESPONSE_JSON_POINTER);
 
     match execute_graphql_health_check(
         system_router,
