@@ -79,6 +79,9 @@ async fn bundle_source(module_fs_path: &Path) -> Result<String, ModelBuildingErr
     let output = Command::new(deno_path)
         .arg("bundle")
         .arg("--allow-import")
+        // Preserve tagged template literals (e.g. sql`...`) to avoid runtime NOT_TAGGED_CALL errors
+        // caused by downlevel transforms.
+        .arg("--target=esnext")
         .arg("--quiet")
         .arg("--node-modules-dir=auto")
         .arg(module_fs_path.to_string_lossy().as_ref())
