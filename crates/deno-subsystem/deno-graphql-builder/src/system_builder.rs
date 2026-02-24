@@ -43,14 +43,19 @@ const DENO_BUNDLE_WARNING: &[u8] = b"is experimental and subject to changes";
 async fn bundle_source(module_fs_path: &Path) -> Result<String, ModelBuildingError> {
     let deno_path = download_deno_if_needed().await?;
 
-    let output = tokio::process::Command::new(deno_path)
+    let mut command = tokio::process::Command::new(deno_path);
+    command
         .arg("bundle")
         .arg("--allow-import")
         .arg("--quiet")
         .arg("--node-modules-dir=auto")
-        .arg(module_fs_path.to_string_lossy().as_ref())
-        .output()
-        .await;
+        .arg(module_fs_path.to_string_lossy().as_ref());
+
+    if let Some(config_path) = find_deno_config(module_fs_path) {
+        command.arg("--config").arg(config_path);
+    }
+
+    let output = command.output().await;
 
     fn simplify_error(output: &[u8]) -> String {
         // remove the "experimental" warning by looking for DENO_BUNDLE_WARNING and stripping that out
@@ -92,6 +97,48 @@ async fn bundle_source(module_fs_path: &Path) -> Result<String, ModelBuildingErr
             e
         ))),
     }
+}
+
+fn find_deno_config(module_fs_path: &Path) -> Option<PathBuf> {
+    if let Ok(explicit) = std::env::var("EXO_DENO_CONFIG") {
+        let path = PathBuf::from(explicit);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    if let Ok(explicit) = std::env::var("DENO_CONFIG") {
+        let path = PathBuf::from(explicit);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    if let Ok(cwd) = std::env::current_dir() {
+        let json = cwd.join("deno.json");
+        if json.exists() {
+            return Some(json);
+        }
+        let jsonc = cwd.join("deno.jsonc");
+        if jsonc.exists() {
+            return Some(jsonc);
+        }
+    }
+
+    let mut current = module_fs_path.parent()?.to_path_buf();
+    loop {
+        let json = current.join("deno.json");
+        if json.exists() {
+            return Some(json);
+        }
+        let jsonc = current.join("deno.jsonc");
+        if jsonc.exists() {
+            return Some(jsonc);
+        }
+        if !current.pop() {
+            break;
+        }
+    }
+    None
 }
 
 async fn download_deno_if_needed() -> Result<PathBuf, ModelBuildingError> {
