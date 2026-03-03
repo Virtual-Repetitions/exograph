@@ -63,11 +63,32 @@ impl DatabaseSpec {
 
     /// Non-public schemas required by this database spec.
     pub fn required_schemas(&self, scope: &MigrationScopeMatches) -> HashSet<String> {
-        self.tables
+        let mut schemas: HashSet<String> = self
+            .tables
             .iter()
             .filter(|table| scope.matches(&table.name) && table.managed)
             .flat_map(|table| table.name.schema.clone())
-            .collect()
+            .collect();
+
+        // Include non-public schemas referenced by managed tables so verification/migrations
+        // can introspect cross-schema relations (for example public table -> virtual_assets table).
+        for table in self
+            .tables
+            .iter()
+            .filter(|table| scope.matches(&table.name) && table.managed)
+        {
+            for column in &table.columns {
+                if let Some(reference_specs) = &column.reference_specs {
+                    for reference_spec in reference_specs {
+                        if let Some(schema) = &reference_spec.foreign_table_name.schema {
+                            schemas.insert(schema.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        schemas
     }
 
     // Explicitly required sequences for this database spec.
