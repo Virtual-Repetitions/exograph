@@ -8,7 +8,7 @@
 // by the Apache License, Version 2.0.
 
 use std::{
-    collections::{hash_map::RandomState, hash_set::Difference},
+    collections::{HashSet, hash_map::RandomState, hash_set::Difference},
     hash::Hash,
 };
 
@@ -52,12 +52,37 @@ impl MigrationScopeMatches {
     }
 
     pub fn from_specs_schemas(specs: &[&DatabaseSpec]) -> Self {
-        let mut schemas = specs
-            .iter()
-            .flat_map(|spec| spec.required_schemas(&MigrationScopeMatches::all_schemas()))
-            .collect::<Vec<_>>();
+        let mut schemas: HashSet<String> = HashSet::new();
+
+        // Scope inference must include all modeled schemas, not just managed ones.
+        // Verification/migration introspection can otherwise miss cross-schema tables
+        // referenced by relations from managed=false models.
+        for spec in specs.iter() {
+            for table in &spec.tables {
+                if let Some(schema) = &table.name.schema {
+                    schemas.insert(schema.clone());
+                }
+
+                for column in &table.columns {
+                    if let Some(reference_specs) = &column.reference_specs {
+                        for reference_spec in reference_specs {
+                            if let Some(schema) = &reference_spec.foreign_table_name.schema {
+                                schemas.insert(schema.clone());
+                            }
+                        }
+                    }
+                }
+            }
+
+            for enum_ in &spec.enums {
+                if let Some(schema) = &enum_.name.schema {
+                    schemas.insert(schema.clone());
+                }
+            }
+        }
+
         if specs.iter().any(|spec| spec.needs_public_schema()) {
-            schemas.push("public".to_string());
+            schemas.insert("public".to_string());
         }
 
         MigrationScopeMatches(
