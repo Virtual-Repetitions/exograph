@@ -12,8 +12,8 @@ if [ ! -f "Cargo.toml" ]; then
   exit 1
 fi
 
-if [ $# -ne 1 ]; then
-  echo "Usage: $0 <major|minor|patch>" 1>&2
+if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+  echo "Usage: $0 <major|minor|patch> [--refresh-deps]" 1>&2
   exit 1
 fi
 
@@ -25,6 +25,20 @@ case "$BUMP_TYPE" in
     exit 1
     ;;
 esac
+
+REFRESH_DEPS=0
+if [ $# -eq 2 ]; then
+  case "$2" in
+    --refresh-deps)
+      REFRESH_DEPS=1
+      ;;
+    *)
+      echo "Error: Unknown option '$2'." 1>&2
+      echo "Usage: $0 <major|minor|patch> [--refresh-deps]" 1>&2
+      exit 1
+      ;;
+  esac
+fi
 
 CURRENT_VERSION=$(grep -E '^[[:space:]]*version = "[0-9]+\.[0-9]+\.[0-9]+"' Cargo.toml | head -n 1 | sed -E 's/^[[:space:]]*version = "([0-9]+\.[0-9]+\.[0-9]+)"/\1/')
 if [ -z "$CURRENT_VERSION" ]; then
@@ -81,13 +95,18 @@ if text == updated:
 cargo_toml.write_text(updated)
 PY
 
-cargo generate-lockfile >/dev/null
+echo "Updated Cargo.toml."
 
-# Pin timezone_provider to a version compatible with temporal_rs
-cargo update -p timezone_provider --precise 0.0.14 >/dev/null
+if [ "$REFRESH_DEPS" -eq 1 ]; then
+  cargo generate-lockfile >/dev/null
 
-# Keep jsonwebtoken aligned with required features
-cargo update -p jsonwebtoken --precise 10.2.0 >/dev/null
+  # Pin timezone_provider to a version compatible with temporal_rs
+  cargo update -p timezone_provider --precise 0.0.14 >/dev/null
 
-echo "Updated Cargo.toml and regenerated Cargo.lock."
+  # Keep jsonwebtoken aligned with required features
+  cargo update -p jsonwebtoken --precise 10.2.0 >/dev/null
+
+  echo "Regenerated Cargo.lock and refreshed selected dependencies."
+fi
+
 echo "Next steps: review changes and run cargo build or tests as needed."
