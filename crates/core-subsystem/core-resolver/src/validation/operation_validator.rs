@@ -165,35 +165,52 @@ impl<'a> OperationValidator<'a> {
     ) -> Result<HashMap<Name, ConstValue>, ValidationError> {
         variable_definitions
             .into_iter()
-            .map(|variable_definition| {
-                let variable_name = variable_definition.node.name.clone();
-                let variable_value = self.var_value(&variable_definition)?;
-                Ok((variable_name.node, variable_value))
+            .filter_map(|variable_definition| {
+                self.var_value(&variable_definition)
+                    .map(|value| value.map(|v| (variable_definition.node.name.node.clone(), v)))
+                    .transpose()
             })
             .collect()
     }
 
+    /// Resolve a variable to its value.
+    ///
+    /// Per the GraphQL spec (October 2021, section 5.8.5), a nullable variable
+    /// that is not provided is treated as absent rather than as a validation
+    /// error. Returning `Ok(None)` here lets callers (such as the arguments
+    /// validator) apply the same "absent nullable" behavior as for omitted
+    /// arguments. A provided value is coerced against the declared type
+    /// (enums and input objects included).
     fn var_value(
         &self,
         variable_definition: &Positioned<VariableDefinition>,
-    ) -> Result<ConstValue, ValidationError> {
+    ) -> Result<Option<ConstValue>, ValidationError> {
         let variable_name = &variable_definition.node.name;
-        let resolved = self
+        let provided = self
             .variables
             .as_ref()
-            .and_then(|variables| variables.get(variable_name.node.as_str()))
-            .ok_or_else(|| {
-                ValidationError::VariableNotFound(
+            .and_then(|variables| variables.get(variable_name.node.as_str()));
+
+        match provided {
+            Some(resolved) => self
+                .coerce_variable_value(
+                    &variable_definition.node.var_type.node,
+                    resolved.clone(),
+                    variable_name,
+                )
+                .map(Some),
+            None => match (
+                &variable_definition.node.default_value,
+                variable_definition.node.var_type.node.nullable,
+            ) {
+                (Some(default_value), _) => Ok(Some(default_value.node.clone())),
+                (None, true) => Ok(None),
+                (None, false) => Err(ValidationError::VariableNotFound(
                     variable_name.node.as_str().to_string(),
                     variable_name.pos,
-                )
-            })?;
-
-        self.coerce_variable_value(
-            &variable_definition.node.var_type.node,
-            resolved.clone(),
-            variable_name,
-        )
+                )),
+            },
+        }
     }
 
     fn coerce_variable_value(

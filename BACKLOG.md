@@ -583,3 +583,39 @@ unchanged. The client is now idle, not idle in transaction.
 vreps-exo keeps the nightly runner's time budget and resume cursor (exo#543), and the
 web cron route loops on that cursor, as defence in depth. `@query` context reads no
 longer start the 30s clock.
+
+## 13. A request that omits a declared nullable variable is rejected — shipped in v0.34.4
+
+**Status:** fixed in v0.34.4 by cherry-picking upstream `980947bc` ("fix: accept
+omitted nullable arguments and variables per GraphQL spec", exograph #2101) onto
+the fork. The fork's enum / input-object variable coercion (kept in
+`coerce_variable_value`) and its "missing optional Deno arg → null, missing
+required → InvalidArgument" rule are preserved on top of it.
+**Found:** 2026-10-13 (coach skill-tree submit), again 2026-10-16 (the app's
+leaderboard query)
+
+Before the fix, `OperationValidator::var_value` looked the variable up in the
+request's `variables` map and returned `ValidationError::VariableNotFound` when
+it was absent — for every declared variable, nullable or not, default or not:
+
+```
+Variable 'source_type' not found
+```
+
+The spec (and every GraphQL client) treats an omitted nullable variable as
+"not provided": the argument is left out, or the declared default applies.
+JSON drops `undefined`, so `{ source_type: undefined }` is omitted; a generated
+client that serializes only assigned fields (AutoGQL's `ShouldSerialize*`)
+hits this on any optional filter it leaves unset, and the error reads like a
+typo in the client rather than an engine rule.
+
+`var_value` now returns `Option<ConstValue>`: a provided value is coerced
+against the declared type; an absent one takes the declared default, is `None`
+when the type is nullable, and errors only when it is non-null. The arguments
+validator treats an absent variable like an omitted argument (spec 6.4.1):
+default value if declared, otherwise absent for nullable, error for non-null.
+Covered by `integration-tests/services/basic/tests/nullable-args.exotest`.
+
+The explicit-null workarounds in `vreps-web` (#949) and `playbook-git` (#5915)
+remain harmless and can stay. Deployments are protected once `EXOGRAPH_TAG`
+reaches v0.34.4.
