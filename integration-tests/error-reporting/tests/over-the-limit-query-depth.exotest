@@ -23,7 +23,7 @@ response: |
     {
       "errors": [
         {
-          "message": "Selection set too deep",
+          "message": "Selection set depth 6 exceeds the maximum allowed depth 5",
           "locations": [
             {
               "line": 11,

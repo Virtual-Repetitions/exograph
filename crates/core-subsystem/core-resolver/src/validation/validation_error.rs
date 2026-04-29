@@ -72,8 +72,12 @@ pub enum ValidationError {
     #[error("Fragment cycle detected: {0}")]
     FragmentCycle(String, Pos),
 
-    #[error("Selection set too deep")]
-    SelectionSetTooDeep(Pos),
+    #[error("Selection set depth {depth} exceeds the maximum allowed depth {max_depth}")]
+    SelectionSetTooDeep {
+        depth: usize,
+        max_depth: usize,
+        pos: Pos,
+    },
 
     #[error("Invalid value for '{value_name}': {range_detail}, {value_detail}")]
     ValueOutOfRange {
@@ -106,7 +110,7 @@ impl ValidationError {
             ValidationError::MultipleOperationsUnmatchedOperationName(_) => vec![],
             ValidationError::InvalidArgumentType { pos, .. } => vec![*pos],
             ValidationError::FragmentCycle(_, pos) => vec![*pos],
-            ValidationError::SelectionSetTooDeep(pos) => vec![*pos],
+            ValidationError::SelectionSetTooDeep { pos, .. } => vec![*pos],
             ValidationError::ValueOutOfRange { pos, .. } => vec![*pos],
         }
     }
