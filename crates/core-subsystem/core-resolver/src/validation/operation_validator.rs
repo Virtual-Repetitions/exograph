@@ -74,7 +74,11 @@ impl<'a> OperationValidator<'a> {
                     self.normal_query_depth_limit
                 };
                 if depth > max_depth {
-                    Err(ValidationError::SelectionSetTooDeep(pos))
+                    Err(ValidationError::SelectionSetTooDeep {
+                        depth,
+                        max_depth,
+                        pos,
+                    })
                 } else {
                     Ok(true)
                 }

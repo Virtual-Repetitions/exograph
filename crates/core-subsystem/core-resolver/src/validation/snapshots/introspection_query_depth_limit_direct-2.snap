@@ -3,7 +3,9 @@ source: crates/core-subsystem/core-resolver/src/validation/document_validator.rs
 expression: validator.validate(create_query_document(query))
 ---
 Err(
-    SelectionSetTooDeep(
-        Pos(5:25),
-    ),
+    SelectionSetTooDeep {
+        depth: 3,
+        max_depth: 2,
+        pos: Pos(5:25),
+    },
 )
