@@ -1,0 +1,10 @@
+stages:
+    - operation: |
+        mutation {
+            o1: createOwner(data: {name: "Owner One"}) {
+                id @bind(name: "o1id")
+            }
+            o2: createOwner(data: {name: "Owner Two"}) {
+                id @bind(name: "o2id")
+            }
+        }
