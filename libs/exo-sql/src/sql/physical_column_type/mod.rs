@@ -181,6 +181,8 @@ fn physical_column_type_from_string(s: &str) -> Result<Box<dyn PhysicalColumnTyp
 
             "UUID" => Box::new(UuidColumnType),
             "TEXT" => Box::new(StringColumnType { max_length: None }),
+            "CITEXT" => Box::new(StringColumnType { max_length: None }),
+            "INET" => Box::new(StringColumnType { max_length: None }),
             "BOOLEAN" => Box::new(BooleanColumnType),
             "JSONB" => Box::new(JsonColumnType),
             "BYTEA" => Box::new(BlobColumnType),

@@ -70,7 +70,7 @@ values:
             type_hint:
               type: Explicit
               data:
-                dbtype: BIGINT
+                dbtype: bigint
             unique_constraints: []
             indices: []
             cardinality: ~

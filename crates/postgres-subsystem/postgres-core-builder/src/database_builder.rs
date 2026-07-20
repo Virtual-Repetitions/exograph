@@ -17,6 +17,7 @@ use crate::{
     resolved_type::{
         ExplicitTypeHint, ResolvedCompositeType, ResolvedEnumType, ResolvedField,
         ResolvedFieldDefault, ResolvedFieldType, ResolvedType, ResolvedTypeEnv,
+        SerializableTypeHint,
     },
     type_provider::VectorTypeHint,
 };
@@ -32,7 +33,7 @@ use core_model_builder::{ast::ast_types::AstExpr, error::ModelBuildingError};
 use exo_sql::schema::column_spec::{ColumnAutoincrement, ColumnDefault, UuidGenerationMethod};
 use exo_sql::{
     ArrayColumnType, BooleanColumnType, ColumnId, EnumColumnType, JsonColumnType, ManyToOne,
-    PhysicalColumn, PhysicalColumnType, PhysicalIndex, PhysicalTable, TableId,
+    PhysicalColumn, PhysicalColumnType, PhysicalIndex, PhysicalTable, SchemaObjectName, TableId,
     schema::index_spec::IndexKind,
 };
 use exo_sql::{ColumnReference, Database, PhysicalEnum, RelationColumnPair};
@@ -185,6 +186,10 @@ fn expand_enum_info(
     resolved_enum: &ResolvedEnumType,
     building: &mut DatabaseBuilding,
 ) -> Result<(), ModelBuildingError> {
+    if !resolved_enum.managed {
+        return Ok(());
+    }
+
     let table = PhysicalEnum {
         name: resolved_enum.enum_name.clone(),
         variants: resolved_enum.fields.clone(),
@@ -515,6 +520,11 @@ fn create_columns(
                     }
                 }
                 ResolvedType::Enum(enum_type) => {
+                    let explicit_enum_name = field
+                        .type_hint
+                        .as_ref()
+                        .and_then(explicit_enum_name_from_hint);
+
                     for column_name in field.column_names.iter() {
                         match created_columns.get_mut(column_name) {
                             Some(_) => {
@@ -530,7 +540,9 @@ fn create_columns(
                                         table_id,
                                         name: column_name.to_string(),
                                         typ: Box::new(EnumColumnType {
-                                            enum_name: enum_type.enum_name.clone(),
+                                            enum_name: explicit_enum_name
+                                                .clone()
+                                                .unwrap_or_else(|| enum_type.enum_name.clone()),
                                         }),
                                         is_pk: field.is_pk,
                                         is_nullable: optional,
@@ -615,6 +627,31 @@ fn create_columns(
     }
 
     Ok(())
+}
+
+fn explicit_enum_name_from_hint(
+    hint: &SerializableTypeHint,
+) -> Option<SchemaObjectName> {
+    let hint_ref = hint.0.as_ref() as &dyn std::any::Any;
+    let explicit = hint_ref.downcast_ref::<ExplicitTypeHint>()?;
+    let dbtype = explicit.dbtype.trim().replace('"', "");
+
+    let mut parts = dbtype.split('.').map(str::trim);
+    let first = parts.next()?;
+    let second = parts.next();
+
+    if parts.next().is_some() {
+        return None;
+    }
+
+    match second {
+        Some(name) if !name.is_empty() => Some(SchemaObjectName::new_with_schema_name(
+            name.to_lowercase(),
+            first.to_lowercase(),
+        )),
+        None => Some(SchemaObjectName::new(first.to_lowercase(), None)),
+        _ => None,
+    }
 }
 
 fn compute_many_to_one_relation(

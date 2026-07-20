@@ -45,6 +45,7 @@ pub struct ResolvedEnumType {
     pub name: String,
     pub fields: Vec<String>,
     pub enum_name: SchemaObjectName,
+    pub managed: bool,
     pub doc_comments: Option<String>,
     #[serde(skip_serializing)]
     #[serde(skip_deserializing)]

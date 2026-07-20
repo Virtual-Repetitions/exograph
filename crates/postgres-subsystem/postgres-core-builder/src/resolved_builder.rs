@@ -699,6 +699,7 @@ fn resolve(
                             et.name.to_snake_case(),
                             module_schema_name.as_deref(),
                         ),
+                        managed: module_managed.unwrap_or(true),
                         doc_comments: et.doc_comments.clone(),
                         span: et.span,
                     }),
@@ -1774,7 +1775,7 @@ fn build_type_hint(
         .map(|p| p.as_single().as_string())
         .map(|s| {
             SerializableTypeHint(Box::new(ExplicitTypeHint {
-                dbtype: s.to_uppercase(),
+                dbtype: s,
             }))
         });
 

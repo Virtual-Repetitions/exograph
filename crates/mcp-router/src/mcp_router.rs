@@ -165,6 +165,7 @@ impl McpRouter {
                     Some(tool) => {
                         let (tool_result, status_code, extra_headers) =
                             tool.execute(request, request_context).await?;
+                        let is_error = status_code.is_client_error() || status_code.is_server_error();
 
                         let content = tool_result
                             .into_iter()
@@ -178,7 +179,7 @@ impl McpRouter {
 
                         let tool_result = json!({
                             "content": content,
-                            "isError": false,
+                            "isError": is_error,
                         });
 
                         let response = SubsystemRpcResponse {
