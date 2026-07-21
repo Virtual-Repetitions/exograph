@@ -19,6 +19,7 @@ modules:
                 - Int
                 - []
                 - ~
+            arguments: []
             annotations: []
             default_value: ~
             doc_comments: "Todo database field id line 1\nTodo database field id line 2"
@@ -29,6 +30,7 @@ modules:
                 - String
                 - []
                 - ~
+            arguments: []
             annotations: []
             default_value: ~
             doc_comments: "Todo database field title line 1\nTodo database field title line 2"

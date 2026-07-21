@@ -19,6 +19,7 @@ modules:
                 - Int
                 - []
                 - ~
+            arguments: []
             annotations:
               - name: pk
                 params: None
@@ -35,6 +36,7 @@ modules:
                 - String
                 - []
                 - ~
+            arguments: []
             annotations: []
             default_value: ~
             doc_comments: ~
@@ -45,6 +47,7 @@ modules:
                 - Venue
                 - []
                 - ~
+            arguments: []
             annotations:
               - name: column
                 params:
@@ -71,6 +74,7 @@ modules:
                 - Int
                 - []
                 - ~
+            arguments: []
             annotations:
               - name: pk
                 params: None
@@ -87,6 +91,7 @@ modules:
                 - String
                 - []
                 - ~
+            arguments: []
             annotations: []
             default_value: ~
             doc_comments: ~
@@ -101,6 +106,7 @@ modules:
                       - []
                       - ~
                 - ~
+            arguments: []
             annotations:
               - name: column
                 params:

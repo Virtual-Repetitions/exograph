@@ -32,10 +32,9 @@ use crate::{
     resolved_type::{
         ExplicitTypeHint, JoinTableShortcutCardinality, JoinTableShortcutConfig,
         ResolvedCompositeType, ResolvedComputedField, ResolvedComputedFieldArgument,
-        ResolvedEnumType, ResolvedField,
-        ResolvedFieldDefault, ResolvedFieldType, ResolvedJoinTableConfig,
-        ResolvedJoinTableIntermediateField, ResolvedJoinTableShortcutField, ResolvedType,
-        SerializableTypeHint,
+        ResolvedEnumType, ResolvedField, ResolvedFieldDefault, ResolvedFieldType,
+        ResolvedJoinTableConfig, ResolvedJoinTableIntermediateField,
+        ResolvedJoinTableShortcutField, ResolvedType, SerializableTypeHint,
     },
     type_provider::{PRIMITIVE_TYPE_PROVIDER_REGISTRY, validate_hint_annotations},
 };

@@ -19,6 +19,7 @@ modules:
                 - Baz
                 - []
                 - ~
+            arguments: []
             annotations:
               - name: column
                 params:
