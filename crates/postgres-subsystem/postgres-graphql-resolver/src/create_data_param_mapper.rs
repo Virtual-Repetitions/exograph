@@ -275,6 +275,51 @@ fn enrich_argument_for_access(
         }
     }
 
+    // Reverse direction: a many-to-one relation in the argument (e.g. `owner:
+    // {uuid}`) supplies the FK column of a scalar field (e.g. `owner_uuid`)
+    // that access expressions like `self.owner_uuid == AuthContext.userId`
+    // reference. Surface those values so the create precheck evaluates against
+    // what will actually be inserted. The FK scalar may be readonly and thus
+    // absent from the mutation input type, so map columns via the entity type.
+    let entity_type = &subsystem.core_subsystem.entity_types[data_type.entity_id];
+    let mut entity_column_to_field: HashMap<ColumnId, &str> = HashMap::new();
+    for field in &entity_type.fields {
+        if let PostgresRelation::Scalar { column_id, .. } = &field.relation {
+            entity_column_to_field.insert(*column_id, field.name.as_str());
+        }
+    }
+
+    for field in &data_type.fields {
+        let Some(Val::Object(relation_value)) = argument_object.get(&field.name) else {
+            continue;
+        };
+
+        if let PostgresRelation::ManyToOne { relation, .. } = &field.relation {
+            let relation_details = relation
+                .relation_id
+                .deref(&subsystem.core_subsystem.database);
+
+            for (pair, pk_field_id) in relation_details
+                .column_pairs
+                .iter()
+                .zip(relation.foreign_pk_field_ids.iter())
+            {
+                let Some(fk_field_name) = entity_column_to_field.get(&pair.self_column_id) else {
+                    continue;
+                };
+                if enriched.contains_key(*fk_field_name) {
+                    continue;
+                }
+
+                let pk_field = pk_field_id.resolve(&subsystem.core_subsystem.entity_types);
+                if let Some(pk_value) = relation_value.get(&pk_field.name) {
+                    enriched.insert((*fk_field_name).to_string(), pk_value.clone());
+                    modified = true;
+                }
+            }
+        }
+    }
+
     if modified {
         Some(Val::Object(enriched))
     } else {
@@ -289,6 +334,29 @@ async fn map_readonly_defaults<'a>(
     request_context: &'a RequestContext<'a>,
 ) -> Result<Vec<InsertionElement>, PostgresExecutionError> {
     let entity_type = &subsystem.core_subsystem.entity_types[data_type.entity_id];
+
+    // Columns already supplied by input fields present in the argument (e.g. a
+    // many-to-one relation such as `owner` that maps to the same column as a
+    // readonly ownership field like `owner_uuid`). Applying the dynamic default
+    // for those would emit the same column twice in the INSERT.
+    let mut supplied_columns: Vec<ColumnId> = Vec::new();
+    for input_field in data_type.fields.iter() {
+        if super::util::get_argument_field(argument, &input_field.name).is_none() {
+            continue;
+        }
+        match &input_field.relation {
+            PostgresRelation::Scalar { column_id, .. } => supplied_columns.push(*column_id),
+            PostgresRelation::ManyToOne {
+                relation: ManyToOneRelation { relation_id, .. },
+                ..
+            } => {
+                let ManyToOne { column_pairs, .. } =
+                    relation_id.deref(&subsystem.core_subsystem.database);
+                supplied_columns.extend(column_pairs.iter().map(|pair| pair.self_column_id));
+            }
+            _ => {}
+        }
+    }
 
     let mut defaults = Vec::new();
 
@@ -312,7 +380,9 @@ async fn map_readonly_defaults<'a>(
 
         match &field.relation {
             PostgresRelation::Scalar { column_id, .. } => {
-                defaults.push(map_self_column(*column_id, field, field_arg, subsystem).await?);
+                if !supplied_columns.contains(column_id) {
+                    defaults.push(map_self_column(*column_id, field, field_arg, subsystem).await?);
+                }
             }
             PostgresRelation::ManyToOne {
                 relation: ManyToOneRelation { relation_id, .. },
@@ -321,9 +391,12 @@ async fn map_readonly_defaults<'a>(
                 let ManyToOne { column_pairs, .. } =
                     relation_id.deref(&subsystem.core_subsystem.database);
 
-                let mapped = column_pairs.iter().map(|column_pair| {
-                    map_self_column(column_pair.self_column_id, field, field_arg, subsystem)
-                });
+                let mapped = column_pairs
+                    .iter()
+                    .filter(|column_pair| !supplied_columns.contains(&column_pair.self_column_id))
+                    .map(|column_pair| {
+                        map_self_column(column_pair.self_column_id, field, field_arg, subsystem)
+                    });
                 defaults.extend(try_join_all(mapped).await?);
             }
             PostgresRelation::OneToMany(_)

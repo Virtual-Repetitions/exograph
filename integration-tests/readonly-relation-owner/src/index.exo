@@ -1,0 +1,30 @@
+context AuthContext {
+  @jwt("sub") id: Int
+}
+
+// Mirrors the ownership auto-assign pattern: a readonly owner column defaulted
+// from the auth context, aliased by a many-to-one relation on the same column.
+// Creates that supply the relation must not duplicate the column in the INSERT,
+// and the create access rule must see the relation-supplied owner value.
+@postgres
+module DocsDatabase {
+  @access(true)
+  type Owner {
+    @pk id: Int = autoIncrement()
+    name: String
+    documents: Set<Document>?
+  }
+
+  @access(
+    query = true,
+    create = self.owner_id == AuthContext.id,
+    update = false,
+    delete = false
+  )
+  type Document {
+    @pk id: Int = autoIncrement()
+    title: String
+    @readonly owner_id: Int = AuthContext.id
+    @manyToOne @column("owner_id") owner: Owner?
+  }
+}
