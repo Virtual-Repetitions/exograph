@@ -629,9 +629,7 @@ fn create_columns(
     Ok(())
 }
 
-fn explicit_enum_name_from_hint(
-    hint: &SerializableTypeHint,
-) -> Option<SchemaObjectName> {
+fn explicit_enum_name_from_hint(hint: &SerializableTypeHint) -> Option<SchemaObjectName> {
     let hint_ref = hint.0.as_ref() as &dyn std::any::Any;
     let explicit = hint_ref.downcast_ref::<ExplicitTypeHint>()?;
     let dbtype = explicit.dbtype.trim().replace('"', "");
