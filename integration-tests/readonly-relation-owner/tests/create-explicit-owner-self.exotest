@@ -1,0 +1,25 @@
+# Regression: supplying the owner relation for oneself must not emit the owner
+# column twice in the INSERT (Postgres 42701 "column specified more than once",
+# masked as "Operation failed").
+operation: |
+  mutation {
+      createDocument(data: {title: "explicit-self", owner: {id: 1}}) {
+          id
+          title
+          owner_id
+      }
+  }
+auth: |
+  {
+    "sub": 1
+  }
+response: |
+  {
+    "data": {
+      "createDocument": {
+        "id": 1,
+        "title": "explicit-self",
+        "owner_id": 1
+      }
+    }
+  }

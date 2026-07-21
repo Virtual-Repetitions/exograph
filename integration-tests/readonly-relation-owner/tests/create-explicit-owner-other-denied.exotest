@@ -1,0 +1,23 @@
+# The create access rule (self.owner_id == AuthContext.id) must evaluate against
+# the owner supplied via the relation — not skip it as a missing value — so a
+# caller cannot create rows owned by someone else.
+operation: |
+  mutation {
+      createDocument(data: {title: "spoofed-owner", owner: {id: 2}}) {
+          id
+          title
+          owner_id
+      }
+  }
+auth: |
+  {
+    "sub": 1
+  }
+response: |
+  {
+    "errors": [
+      {
+        "message": "Not authorized"
+      }
+    ]
+  }

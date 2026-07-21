@@ -1,0 +1,22 @@
+operation: |
+  mutation {
+      createDocument(data: {title: "auto-assigned"}) {
+          id
+          title
+          owner_id
+      }
+  }
+auth: |
+  {
+    "sub": 1
+  }
+response: |
+  {
+    "data": {
+      "createDocument": {
+        "id": 1,
+        "title": "auto-assigned",
+        "owner_id": 1
+      }
+    }
+  }
