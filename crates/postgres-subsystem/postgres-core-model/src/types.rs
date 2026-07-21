@@ -13,6 +13,7 @@ use crate::vector_distance::VectorDistanceField;
 
 use common::value::Val;
 use core_model::context_type::ContextSelection;
+use core_model::type_normalization::{BaseType, Parameter, Type};
 use core_model::types::TypeValidation;
 use core_model::{
     mapped_arena::{SerializableSlab, SerializableSlabIndex},
@@ -191,6 +192,46 @@ pub struct ComputedField {
     pub function_name: String,
     pub subsystem: String,
     pub dependencies: Vec<ComputedFieldDependency>,
+    #[serde(default)]
+    pub arguments: Vec<ComputedFieldArgument>,
+}
+
+/// A GraphQL argument declared on a `@computed` field. Rendered as an
+/// `InputValueDefinition` during introspection so the request validator
+/// accepts caller-supplied arguments and forwards them to the resolver.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ComputedFieldArgument {
+    pub name: String,
+    pub type_name: String,
+    pub optional: bool,
+    pub is_list: bool,
+}
+
+impl Parameter for ComputedFieldArgument {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn typ(&self) -> Type {
+        if self.is_list {
+            Type {
+                base: BaseType::List(Box::new(Type {
+                    base: BaseType::Leaf(self.type_name.clone()),
+                    nullable: false,
+                })),
+                nullable: self.optional,
+            }
+        } else {
+            Type {
+                base: BaseType::Leaf(self.type_name.clone()),
+                nullable: self.optional,
+            }
+        }
+    }
+
+    fn type_validation(&self) -> Option<TypeValidation> {
+        None
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

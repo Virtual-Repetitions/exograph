@@ -142,6 +142,11 @@ module.exports = grammar({
       optional(field("doc_comment", $.doc_comment)),
       repeat(field("annotation", $.annotation)),
       field("name", $.term),
+      optional(seq(
+        "(",
+        optional(commaSep(field("args", $.argument))),
+        ")"
+      )),
       ":",
       field("field_type", $.field_type),
       optional(seq(

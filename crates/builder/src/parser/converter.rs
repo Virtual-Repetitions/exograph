@@ -427,6 +427,10 @@ fn convert_field(node: Node, source: &[u8], source_span: Span) -> AstField<Untyp
             source,
             source_span,
         ),
+        arguments: node
+            .children_by_field_name("args", &mut cursor)
+            .map(|c| convert_argument(c, source, source_span))
+            .collect(),
         default_value: node
             .child_by_field_name("default_value")
             .map(|node| convert_field_default_value(node, source, source_span)),

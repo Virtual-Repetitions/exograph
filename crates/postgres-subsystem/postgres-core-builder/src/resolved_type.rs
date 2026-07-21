@@ -159,6 +159,17 @@ pub struct ResolvedComputedField {
     pub function_name: String,
     pub subsystem: Option<String>,
     pub dependencies: Vec<String>,
+    pub arguments: Vec<ResolvedComputedFieldArgument>,
+}
+
+/// A GraphQL argument declared on a `@computed` field (e.g. `scope: String`).
+/// The type name is a GraphQL scalar/enum name (validated at introspection time).
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ResolvedComputedFieldArgument {
+    pub name: String,
+    pub type_name: String,
+    pub optional: bool,
+    pub is_list: bool,
 }
 
 // TODO: dedup?

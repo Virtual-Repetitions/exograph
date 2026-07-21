@@ -201,6 +201,10 @@ pub enum AstModelKind {
 pub struct AstField<T: NodeTypedness> {
     pub name: String,
     pub typ: AstFieldType<T>,
+    /// GraphQL arguments declared on the field (e.g. `foo(x: Int): String`).
+    /// Only meaningful for `@computed` fields today; empty for ordinary fields.
+    #[serde(default = "Vec::new")]
+    pub arguments: Vec<AstArgument<T>>,
     pub annotations: T::Annotations,
     pub default_value: Option<AstFieldDefault<T>>,
     pub doc_comments: Option<String>,

@@ -16,7 +16,7 @@ use core_model_builder::typechecker::annotation::{AnnotationSpec, AnnotationTarg
 use core_model_builder::typechecker::annotation_map::AnnotationMap;
 
 use crate::ast::ast_types::{
-    AstExpr, AstField, AstFieldDefault, AstFieldDefaultKind, AstFieldType, Untyped,
+    AstArgument, AstExpr, AstField, AstFieldDefault, AstFieldDefaultKind, AstFieldType, Untyped,
 };
 
 use super::annotation_map::AnnotationMapImpl;
@@ -29,6 +29,11 @@ impl TypecheckFrom<AstField<Untyped>> for AstField<Typed> {
         AstField {
             name: untyped.name.clone(),
             typ: AstFieldType::shallow(&untyped.typ),
+            arguments: untyped
+                .arguments
+                .iter()
+                .map(AstArgument::shallow)
+                .collect(),
             annotations: annotation_map,
             doc_comments: untyped.doc_comments.clone(),
             default_value: untyped.default_value.as_ref().map(AstFieldDefault::shallow),
@@ -44,6 +49,14 @@ impl TypecheckFrom<AstField<Untyped>> for AstField<Typed> {
         errors: &mut Vec<Diagnostic>,
     ) -> bool {
         let typ_changed = self.typ.pass(type_env, annotation_env, scope, errors);
+
+        let arguments_changed = self
+            .arguments
+            .iter_mut()
+            .map(|a| a.pass(type_env, annotation_env, scope, errors))
+            .filter(|v| *v)
+            .count()
+            > 0;
 
         let annot_changed = self.annotations.pass(
             AnnotationTarget::Field,
@@ -134,6 +147,6 @@ impl TypecheckFrom<AstField<Untyped>> for AstField<Typed> {
             }
         };
 
-        typ_changed || annot_changed || default_value_changed
+        typ_changed || arguments_changed || annot_changed || default_value_changed
     }
 }
