@@ -66,6 +66,7 @@ types:
                         - []
                         - true
                   - true
+              arguments: []
               annotations:
                 annotations:
                   jwt:
@@ -89,6 +90,7 @@ types:
                   - String
                   - []
                   - true
+              arguments: []
               annotations:
                 annotations:
                   access:
@@ -214,6 +216,7 @@ modules:
                     - String
                     - []
                     - true
+                arguments: []
                 annotations:
                   annotations:
                     access:

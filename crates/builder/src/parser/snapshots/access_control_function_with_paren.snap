@@ -24,6 +24,7 @@ modules:
                         - []
                         - ~
                   - ~
+            arguments: []
             annotations: []
             default_value: ~
             doc_comments: ~
@@ -79,6 +80,7 @@ modules:
                 - Int
                 - []
                 - ~
+            arguments: []
             annotations:
               - name: pk
                 params: None
@@ -95,6 +97,7 @@ modules:
                 - Venue
                 - []
                 - ~
+            arguments: []
             annotations: []
             default_value: ~
             doc_comments: ~

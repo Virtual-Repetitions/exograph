@@ -31,10 +31,10 @@ use super::{
 use crate::{
     resolved_type::{
         ExplicitTypeHint, JoinTableShortcutCardinality, JoinTableShortcutConfig,
-        ResolvedCompositeType, ResolvedComputedField, ResolvedEnumType, ResolvedField,
-        ResolvedFieldDefault, ResolvedFieldType, ResolvedJoinTableConfig,
-        ResolvedJoinTableIntermediateField, ResolvedJoinTableShortcutField, ResolvedType,
-        SerializableTypeHint,
+        ResolvedCompositeType, ResolvedComputedField, ResolvedComputedFieldArgument,
+        ResolvedEnumType, ResolvedField, ResolvedFieldDefault, ResolvedFieldType,
+        ResolvedJoinTableConfig, ResolvedJoinTableIntermediateField,
+        ResolvedJoinTableShortcutField, ResolvedType, SerializableTypeHint,
     },
     type_provider::{PRIMITIVE_TYPE_PROVIDER_REGISTRY, validate_hint_annotations},
 };
@@ -45,7 +45,7 @@ use core_model::{
 };
 use core_model_builder::{
     ast::ast_types::{
-        AstAnnotation, AstAnnotationParams, AstExpr, AstField, AstFieldDefault,
+        AstAnnotation, AstAnnotationParams, AstArgument, AstExpr, AstField, AstFieldDefault,
         AstFieldDefaultKind, AstFieldType, AstModel, AstModelKind, FieldSelection,
         FieldSelectionElement, LogicalOp, RelationalOp, default_span,
     },
@@ -1323,6 +1323,23 @@ fn resolve_composite_type_fields(
             continue;
         }
 
+        if !field.arguments.is_empty() {
+            errors.push(Diagnostic {
+                level: Level::Error,
+                message: format!(
+                    "Field '{}' declares arguments but is not a @computed field; arguments are only supported on @computed fields",
+                    field.name
+                ),
+                code: Some("C000".to_string()),
+                spans: vec![SpanLabel {
+                    span: field.span,
+                    style: SpanStyle::Primary,
+                    label: Some("unexpected arguments".to_string()),
+                }],
+            });
+            continue;
+        }
+
         if relation_path.is_some() {
             readonly = true;
         }
@@ -1557,12 +1574,47 @@ fn parse_computed_field(
         None => vec![],
     };
 
+    let arguments = field
+        .arguments
+        .iter()
+        .map(resolve_computed_field_argument)
+        .collect();
+
     Some(ResolvedComputedField {
         source_path: canonical.to_string_lossy().to_string(),
         function_name,
         subsystem,
         dependencies,
+        arguments,
     })
+}
+
+/// Convert a declared `@computed` field argument's AST type into the resolved
+/// form. Optional (`T?`) and list (`Set<T>` / `Array<T>`) wrappers are unwrapped;
+/// the innermost name is the GraphQL type name emitted at introspection time.
+fn resolve_computed_field_argument(arg: &AstArgument<Typed>) -> ResolvedComputedFieldArgument {
+    let optional = matches!(arg.typ, AstFieldType::Optional(_));
+
+    let inner = match &arg.typ {
+        AstFieldType::Optional(inner) => inner.as_ref(),
+        other => other,
+    };
+
+    let (type_name, is_list) = match inner {
+        AstFieldType::Plain(_, base, params, _, _)
+            if (base == "Set" || base == "Array") && params.len() == 1 =>
+        {
+            (params[0].name(), true)
+        }
+        other => (other.name(), false),
+    };
+
+    ResolvedComputedFieldArgument {
+        name: arg.name.clone(),
+        type_name,
+        optional,
+        is_list,
+    }
 }
 
 fn validate_computed_field_annotations(
@@ -2358,6 +2410,15 @@ fn get_matching_field<'a>(
         .fields
         .iter()
         .filter(|candidate_field| {
+            // A `@computed` field is resolver-backed, not a persistence relation, so it
+            // can never be the inverse side of a database relation. Skip it, otherwise a
+            // computed field returning the enclosing type (e.g. `leaderboards: [Leaderboard]`)
+            // would be mistaken for the inverse of a `belongsTo` and corrupt cardinality
+            // inference.
+            if candidate_field.annotations.contains("computed") {
+                return false;
+            }
+
             // The type of the field must match the enclosing type. For example, the type must match the `Concert` type (or its variation such as `Set<Concert>`)
             let type_matches = candidate_field
                 .typ

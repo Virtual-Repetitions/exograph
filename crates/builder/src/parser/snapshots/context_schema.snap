@@ -13,6 +13,7 @@ types:
             - Int
             - []
             - ~
+        arguments: []
         annotations:
           - name: jwt
             params:
@@ -32,6 +33,7 @@ types:
                   - []
                   - ~
             - ~
+        arguments: []
         annotations:
           - name: jwt
             params: None

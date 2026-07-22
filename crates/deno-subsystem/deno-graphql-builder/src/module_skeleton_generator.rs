@@ -548,6 +548,7 @@ mod tests {
                 AstField {
                     name: "field1".to_string(),
                     typ: AstFieldType::Plain(None, "String".to_string(), vec![], true, span),
+                    arguments: vec![],
                     annotations: Default::default(),
                     default_value: None,
                     doc_comments: None,
@@ -556,6 +557,7 @@ mod tests {
                 AstField {
                     name: "field2".to_string(),
                     typ: AstFieldType::Plain(None, "Int".to_string(), vec![], true, span),
+                    arguments: vec![],
                     annotations: Default::default(),
                     default_value: None,
                     doc_comments: None,
@@ -591,6 +593,7 @@ mod tests {
                         true,
                         span,
                     ),
+                    arguments: vec![],
                     annotations: Default::default(),
                     default_value: None,
                     doc_comments: None,
@@ -599,6 +602,7 @@ mod tests {
                 AstField {
                     name: "totalCount".to_string(),
                     typ: AstFieldType::Plain(None, "Int".to_string(), vec![], true, span),
+                    arguments: vec![],
                     annotations: Default::default(),
                     default_value: None,
                     doc_comments: None,

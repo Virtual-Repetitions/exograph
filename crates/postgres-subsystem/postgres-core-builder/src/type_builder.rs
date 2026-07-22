@@ -30,7 +30,8 @@ use core_model::primitive_type;
 use core_model::types::{Named, TypeValidationProvider};
 use postgres_core_model::access::{CreationAccessExpression, PrecheckAccessPrimitiveExpression};
 use postgres_core_model::types::{
-    ComputedField, ComputedFieldDependency, PostgresFieldDefaultValue, PostgresPrimitiveTypeKind,
+    ComputedField, ComputedFieldArgument, ComputedFieldDependency, PostgresFieldDefaultValue,
+    PostgresPrimitiveTypeKind,
 };
 
 use crate::{aggregate_type_builder::aggregate_type_name, shallow::Shallow};
@@ -716,6 +717,16 @@ fn create_persistent_field(
                 function_name: computed.function_name.clone(),
                 subsystem,
                 dependencies,
+                arguments: computed
+                    .arguments
+                    .iter()
+                    .map(|arg| ComputedFieldArgument {
+                        name: arg.name.clone(),
+                        type_name: arg.type_name.clone(),
+                        optional: arg.optional,
+                        is_list: arg.is_list,
+                    })
+                    .collect(),
             }),
             access: placeholder_access,
             default_value: None,
