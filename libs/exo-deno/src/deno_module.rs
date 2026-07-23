@@ -244,7 +244,19 @@ impl DenoModule {
         //
         // To avoid the theoretical possibility of JS injection risk we need to ensure that the keys and values are properly escaped.
         // Note that this is not really important, since environment variables are not user-controlled (they are developer controlled).
+        //
+        // Precedence must match the Rust-side CompositeEnvironment: the real process
+        // environment wins over .env files, and earlier (higher-precedence) files win
+        // over later ones. Deno already inherits the process env, so skip any key set
+        // there, and only apply the first .env occurrence of a key.
+        let mut seen_keys = std::collections::HashSet::new();
         for (key, value) in additional_env.non_system_envs() {
+            if std::env::var(&key).is_ok() {
+                continue;
+            }
+            if !seen_keys.insert(key.clone()) {
+                continue;
+            }
             let env_setting_script = format!(
                 "Deno.env.set({}, {});",
                 serde_json::to_string(&key)?,
