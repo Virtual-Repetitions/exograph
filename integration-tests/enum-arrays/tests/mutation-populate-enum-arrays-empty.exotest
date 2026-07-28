@@ -1,0 +1,19 @@
+operation: |
+    mutation {
+        insertion: createMoodEntry(data: {
+            name: "blank",
+            moods: []
+        }) {
+            name
+            moods
+        }
+    }
+response: |
+    {
+      "data": {
+        "insertion": {
+          "name": "blank",
+          "moods": []
+        }
+      }
+    }

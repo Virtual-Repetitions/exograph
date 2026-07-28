@@ -145,6 +145,17 @@ impl SQLParamContainer {
         })
     }
 
+    /// Attach an enum type to an existing param. Used for enum-array columns,
+    /// where the value binds as a text array and the SQL emits a `::enum[]` cast.
+    pub fn with_enum_type(self, enum_type: SchemaObjectName) -> Self {
+        Self(SQLParamWithType {
+            param: self.0.param,
+            param_type: self.0.param_type,
+            is_array: self.0.is_array,
+            enum_type: Some(enum_type),
+        })
+    }
+
     pub fn from_sql_values(params: Vec<SQLValue>, elem_type: Type) -> Self {
         let collection_type = to_pg_array_type(&elem_type);
 

@@ -11,7 +11,7 @@ use super::CastProvider;
 use crate::cast::CastError;
 use common::value::Val;
 use exo_sql::{
-    ArrayColumnType, PhysicalColumnType, SQLParamContainer,
+    ArrayColumnType, EnumColumnType, PhysicalColumnType, SQLParamContainer,
     array_util::{self, ArrayEntry},
     database_error::DatabaseError,
 };
@@ -50,9 +50,18 @@ impl CastProvider for ArrayCastProvider {
                     }
                 }
 
+                // Resolve the innermost element type so element values cast
+                // against it (enum elements, in particular, must cast against
+                // the EnumColumnType rather than the array wrapper).
+                let mut element_type: &dyn PhysicalColumnType = destination_type;
+                while let Some(array_type) = element_type.as_any().downcast_ref::<ArrayColumnType>()
+                {
+                    element_type = array_type.typ.as_ref();
+                }
+
                 let cast_value_with_error =
                     |value: &Val| -> Result<Option<SQLParamContainer>, DatabaseError> {
-                        crate::cast::cast_value(value, destination_type, false)
+                        crate::cast::cast_value(value, element_type, false)
                             .map_err(|error| DatabaseError::BoxedError(error.into()))
                     };
 
@@ -62,6 +71,16 @@ impl CastProvider for ArrayCastProvider {
                     array_entry,
                     &cast_value_with_error,
                 )
+                .map(|container| {
+                    // Enum arrays bind as text[]; attach the enum type so the
+                    // SQL layer emits a `::enum[]` cast on the placeholder.
+                    match element_type.as_any().downcast_ref::<EnumColumnType>() {
+                        Some(enum_element) => {
+                            container.map(|c| c.with_enum_type(enum_element.enum_name.clone()))
+                        }
+                        None => container,
+                    }
+                })
                 .map_err(CastError::Postgres)
             }
         } else if let Val::String(string) = val {
