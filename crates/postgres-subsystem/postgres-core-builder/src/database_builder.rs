@@ -568,29 +568,43 @@ fn create_columns(
                 depth += 1;
             }
 
-            let underlying_pt = if let FieldType::Plain(ResolvedFieldType { type_name, .. }) =
-                &**underlying_typ
-            {
-                if let Some(ResolvedType::Primitive(pt)) = env.resolved_types.get_by_key(type_name)
-                {
-                    Some(pt)
+            let column_typ: Option<Box<dyn PhysicalColumnType>> =
+                if let FieldType::Plain(ResolvedFieldType { type_name, .. }) = &**underlying_typ {
+                    match env.resolved_types.get_by_key(type_name) {
+                        Some(ResolvedType::Primitive(pt)) => {
+                            // underlying type is a primitive, so treat it as an Array
+
+                            // rewrap underlying PrimitiveType
+                            let mut pt = pt.clone();
+                            for _ in 0..depth {
+                                pt = PrimitiveType::Array(Box::new(pt))
+                            }
+                            Some(determine_column_type(&pt, field))
+                        }
+                        Some(ResolvedType::Enum(enum_type)) => {
+                            // underlying type is an enum: build an array column of the
+                            // (possibly @dbtype-overridden) database enum type
+                            let explicit_enum_name = field
+                                .type_hint
+                                .as_ref()
+                                .and_then(explicit_enum_name_from_hint);
+                            let mut typ: Box<dyn PhysicalColumnType> = Box::new(EnumColumnType {
+                                enum_name: explicit_enum_name
+                                    .unwrap_or_else(|| enum_type.enum_name.clone()),
+                            });
+                            for _ in 0..depth {
+                                typ = Box::new(ArrayColumnType { typ });
+                            }
+                            Some(typ)
+                        }
+                        _ => None,
+                    }
                 } else {
-                    None
-                }
-            } else {
-                todo!()
-            };
+                    todo!()
+                };
 
-            // is our underlying list type a primitive or a column?
-            if let Some(underlying_pt) = underlying_pt {
-                // underlying type is a primitive, so treat it as an Array
-
-                // rewrap underlying PrimitiveType
-                let mut pt = underlying_pt.clone();
-                for _ in 0..depth {
-                    pt = PrimitiveType::Array(Box::new(pt))
-                }
-
+            // is our underlying list type a primitive/enum column?
+            if let Some(column_typ) = column_typ {
                 for column_name in field.column_names.iter() {
                     match created_columns.get_mut(column_name) {
                         Some(_) => {
@@ -605,7 +619,7 @@ fn create_columns(
                                 PhysicalColumn {
                                     table_id,
                                     name: column_name.to_string(),
-                                    typ: determine_column_type(&pt, field),
+                                    typ: column_typ.clone(),
                                     is_pk: false,
                                     is_nullable: optional,
                                     unique_constraints: unique_constraint_name.clone(),

@@ -135,6 +135,9 @@ static CAST_PROVIDER_REGISTRY: LazyLock<IndexMap<&'static str, Box<dyn CastProvi
             "Float",
             Box::new(FloatCastProvider) as Box<dyn CastProvider>,
         );
+        // Enum must precede String: both accept Val::String, but string values
+        // destined for an enum column need the enum cast, not a bare text bind
+        registry.insert("Enum", Box::new(EnumCastProvider) as Box<dyn CastProvider>);
         registry.insert(
             "String",
             Box::new(StringCastProvider) as Box<dyn CastProvider>,
@@ -143,7 +146,6 @@ static CAST_PROVIDER_REGISTRY: LazyLock<IndexMap<&'static str, Box<dyn CastProvi
             "Boolean",
             Box::new(BoolCastProvider) as Box<dyn CastProvider>,
         );
-        registry.insert("Enum", Box::new(EnumCastProvider) as Box<dyn CastProvider>);
         registry.insert(
             "Vector",
             Box::new(VectorCastProvider) as Box<dyn CastProvider>,

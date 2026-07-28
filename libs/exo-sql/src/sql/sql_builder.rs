@@ -100,10 +100,19 @@ impl SQLBuilder {
     /// Push a parameter, which will be replaced with a placeholder in the SQL string
     /// and the parameter will be added to the list of parameters.
     pub fn push_param(&mut self, param: SQLParamWithType) {
-        let enum_cast = param
-            .enum_type
-            .as_ref()
-            .map(|enum_type| format!("::{}", enum_type.sql_name()));
+        let enum_cast = param.enum_type.as_ref().map(|enum_type| {
+            // An enum param bound as a Postgres array needs an array cast
+            // (text[] -> enum[]); scalars cast the single value.
+            let array_suffix = if matches!(
+                param.param_type.kind(),
+                tokio_postgres::types::Kind::Array(_)
+            ) {
+                "[]"
+            } else {
+                ""
+            };
+            format!("::{}{}", enum_type.sql_name(), array_suffix)
+        });
 
         self.params.push(param);
         self.push('$');

@@ -1,0 +1,44 @@
+stages:
+  - operation: |
+      mutation {
+        insertion: createMoodEntry(data: {name: "shifting", moods: [sad]}) {
+          id @bind(name: "entryId")
+          moods
+        }
+      }
+    response: |
+      {
+        "data": {
+          "insertion": {
+            "id": 1,
+            "moods": [
+              "sad"
+            ]
+          }
+        }
+      }
+
+  - operation: |
+      mutation($id: Int!, $moods: [Mood]!) {
+        update: updateMoodEntry(id: $id, data: {moods: $moods}) {
+          name
+          moods
+        }
+      }
+    variable: |
+      {
+        "id": $.entryId,
+        "moods": ["happy", "grumpy"]
+      }
+    response: |
+      {
+        "data": {
+          "update": {
+            "name": "shifting",
+            "moods": [
+              "happy",
+              "grumpy"
+            ]
+          }
+        }
+      }

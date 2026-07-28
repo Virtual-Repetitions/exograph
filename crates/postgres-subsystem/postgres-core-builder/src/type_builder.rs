@@ -996,13 +996,14 @@ fn create_relation(
                 // 1. If it is a primitive, we treat it as a scalar ("List" of a primitive type is still a scalar from the database perspective)
                 // 2. Otherwise (if it is a composite), it is a one-to-many relation.
                 match underlying.deref(resolved_env) {
-                    ResolvedType::Primitive(_) => Ok(PostgresRelation::Scalar {
-                        column_id: column_lookup(field.column_name())?,
-                        is_pk: false,
-                    }),
-                    ResolvedType::Enum(_) => Err(ModelBuildingError::Generic(
-                        "Enum types are not supported in relations".to_string(),
-                    )),
+                    // a list of a primitive or enum type is still a scalar
+                    // (array) column from the database perspective
+                    ResolvedType::Primitive(_) | ResolvedType::Enum(_) => {
+                        Ok(PostgresRelation::Scalar {
+                            column_id: column_lookup(field.column_name())?,
+                            is_pk: false,
+                        })
+                    }
                     ResolvedType::Composite(foreign_field_type) => {
                         if foreign_field_type.representation.is_json_like() {
                             Ok(PostgresRelation::Scalar {

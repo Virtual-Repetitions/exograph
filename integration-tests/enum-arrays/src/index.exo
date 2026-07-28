@@ -1,0 +1,18 @@
+@postgres
+module MoodModule {
+  @access(true)
+  enum Mood {
+    happy
+    sad
+    grumpy
+  }
+
+  @table("mood_entries")
+  @access(true)
+  type MoodEntry {
+    @pk id: Int = autoIncrement()
+    name: String
+    moods: Array<Mood>
+    nicknames: Array<String>?
+  }
+}

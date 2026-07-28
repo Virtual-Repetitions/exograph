@@ -1,0 +1,26 @@
+operation: |
+    mutation($moods: [Mood]!) {
+        insertion: createMoodEntry(data: {
+            name: "friday",
+            moods: $moods
+        }) {
+            name
+            moods
+        }
+    }
+variable: |
+  {
+    "moods": ["happy", "grumpy"]
+  }
+response: |
+    {
+      "data": {
+        "insertion": {
+          "name": "friday",
+          "moods": [
+            "happy",
+            "grumpy"
+          ]
+        }
+      }
+    }

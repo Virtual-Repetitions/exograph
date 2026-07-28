@@ -2305,8 +2305,8 @@ fn compute_column_info(
 
                     let underlying_resolved = underlying_typ.deref(types);
 
-                    if let Type::Primitive(_) = &underlying_resolved {
-                        // base type is a primitive, which means this is an Array
+                    if matches!(&underlying_resolved, Type::Primitive(_) | Type::Enum(_)) {
+                        // base type is a primitive or enum, which means this is an Array column
                         Ok(ColumnInfo {
                             names: vec![compute_column_name(&field.name)],
                             self_column: true,
