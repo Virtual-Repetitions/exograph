@@ -1827,11 +1827,15 @@ fn build_type_hint(
         .map(|p| p.as_single().as_string())
         .map(|s| SerializableTypeHint(Box::new(ExplicitTypeHint { dbtype: s })));
 
-    let primitive_hint = {
-        let type_hint_provider = PRIMITIVE_TYPE_PROVIDER_REGISTRY.get(type_name.as_str())?;
-        validate_hint_annotations(field, *type_hint_provider, errors);
-        type_hint_provider.compute_type_hint(field, errors)
-    };
+    // Non-primitive field types (enums, relations) have no provider in the registry, but an
+    // explicit @dbtype hint must still flow through (e.g. an enum column whose database type
+    // name differs from the derived one).
+    let primitive_hint = PRIMITIVE_TYPE_PROVIDER_REGISTRY
+        .get(type_name.as_str())
+        .and_then(|type_hint_provider| {
+            validate_hint_annotations(field, *type_hint_provider, errors);
+            type_hint_provider.compute_type_hint(field, errors)
+        });
 
     // Validate that we don't have conflicting hints
     if explicit_dbtype_hint.is_some() && primitive_hint.is_some() {
@@ -3221,6 +3225,91 @@ mod tests {
         }
         "#,
             "Many-to-many relationships (both side optional) without a linking type should be rejected"
+        );
+    }
+
+    #[multiplatform_test]
+    fn enum_field_preserves_dbtype_hint() {
+        let src = r#"
+        @postgres
+        module LeaderboardModule {
+            enum LeaderboardScopeType {
+                Team
+                Org
+            }
+
+            type Leaderboard {
+                @pk id: Int = autoIncrement()
+                @dbtype("usage.leaderboard_scope_type") scopeType: LeaderboardScopeType
+            }
+        }
+        "#;
+
+        let resolved = create_resolved_system_from_src(src).expect("should resolve");
+        let leaderboard_type = resolved.get_by_key("Leaderboard").unwrap().as_composite();
+
+        let scope_field = leaderboard_type
+            .fields
+            .iter()
+            .find(|field| field.name == "scopeType")
+            .expect("scopeType field exists");
+
+        let hint = scope_field
+            .type_hint
+            .as_ref()
+            .expect("@dbtype hint on an enum field should be preserved");
+        let explicit = (hint.0.as_ref() as &dyn std::any::Any)
+            .downcast_ref::<crate::resolved_type::ExplicitTypeHint>()
+            .expect("hint should be an ExplicitTypeHint");
+        assert_eq!(explicit.dbtype, "usage.leaderboard_scope_type");
+    }
+
+    #[test]
+    fn enum_column_uses_dbtype_enum_name() {
+        use crate::test_util::{create_base_model_system, create_postgres_core_subsystem};
+        use exo_sql::{EnumColumnType, PhysicalColumnTypeExt, SchemaObjectName};
+
+        let src = r#"
+        @postgres
+        module LeaderboardModule {
+            enum LeaderboardScopeType {
+                Team
+                Org
+            }
+
+            type Leaderboard {
+                @pk id: Int = autoIncrement()
+                @dbtype("usage.leaderboard_scope_type") scopeType: LeaderboardScopeType
+            }
+        }
+        "#;
+
+        let typechecked_system =
+            crate::test_util::create_typechecked_system_from_src(src).expect("should typecheck");
+        let base_system = create_base_model_system(&typechecked_system).expect("base system");
+        let system = create_postgres_core_subsystem(&base_system, &typechecked_system)
+            .expect("postgres subsystem");
+
+        let table_id = system
+            .database
+            .get_table_id(&SchemaObjectName::new("leaderboards".to_string(), None))
+            .expect("leaderboards table exists");
+        let column_id = system
+            .database
+            .get_column_id(table_id, "scope_type")
+            .expect("scope_type column exists");
+        let column = column_id.get_column(&system.database);
+
+        let enum_type = column
+            .typ
+            .inner()
+            .as_any()
+            .downcast_ref::<EnumColumnType>()
+            .expect("scope_type should be an enum column");
+        assert_eq!(
+            enum_type.enum_name,
+            SchemaObjectName::new_with_schema_name("leaderboard_scope_type", "usage"),
+            "enum column type should use the @dbtype-specified database enum name"
         );
     }
 
