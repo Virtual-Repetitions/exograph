@@ -25,6 +25,7 @@ use core_router::SystemLoadingError;
 use http::StatusCode;
 use sentry::Level;
 
+use ::tracing::Instrument;
 use ::tracing::instrument;
 use async_graphql_parser::Pos;
 use async_stream::try_stream;
@@ -156,7 +157,11 @@ impl<'a> Router<RequestContext<'a>> for GraphQLRouter {
             client_ip = ?request_head.get_ip(),
             internal = request_context.is_internal()
         );
-        let _request_guard = request_span.enter();
+        // Instrument the resolution future with the span instead of holding an
+        // `enter()` guard across `.await` points, which corrupts the subscriber's
+        // span state (entered spans accumulate against whatever future the worker
+        // polls next and exits mismatch).
+        async {
         tracing::info!("GraphQL request received");
 
         let playground_request = request_head
@@ -280,6 +285,9 @@ impl<'a> Router<RequestContext<'a>> for GraphQLRouter {
             headers,
             status_code: StatusCode::OK,
         })
+        }
+        .instrument(request_span)
+        .await
     }
 }
 
