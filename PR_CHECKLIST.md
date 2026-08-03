@@ -50,6 +50,12 @@ When you create a PR, GitHub Actions will run the same checks across multiple pl
 ### WASM Tests (Currently Disabled)
 - WebAssembly tests are temporarily disabled due to tokio networking incompatibility
 
+### Build Windows Binary (After Merge)
+- Runs on every push to `main` (and via manual dispatch), not on PRs
+- Builds `exo`, `exo-server`, `exo-lsp` and `exo-mcp-bridge` in release mode for `x86_64-pc-windows-msvc`
+- Publishes `exograph-x86_64-pc-windows-msvc.zip` (plus a `.sha256`) to the `v<version>` release, where
+  `<version>` is read from `Cargo.toml` — the same tag used by the Docker image workflow
+
 ## Fixing Common Issues
 
 ### Code Formatting Failed
