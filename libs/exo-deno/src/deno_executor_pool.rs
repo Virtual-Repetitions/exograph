@@ -7,7 +7,12 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0.
 
-use std::{collections::HashMap, marker::PhantomData, sync::Arc};
+use std::{
+    collections::HashMap,
+    marker::PhantomData,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use deno_core::{Extension, ModuleType, url::Url};
 use exo_env::Environment;
@@ -26,7 +31,33 @@ use super::{
 use std::fmt::Debug;
 
 type DenoActorPoolMap<C, M, R> = HashMap<String, DenoActorPool<C, M, R>>;
-type DenoActorPool<C, M, R> = Vec<DenoActor<C, M, R>>;
+type DenoActorPool<C, M, R> = Vec<PooledActor<C, M, R>>;
+
+/// Maximum number of `DenoActor`s (V8 isolates) kept per module. Each actor
+/// holds the module's full bundle in a V8 heap, so an unbounded pool converts
+/// the peak concurrency of each module into a permanent memory floor.
+const EXO_DENO_POOL_MAX_ACTORS_PER_MODULE: &str = "EXO_DENO_POOL_MAX_ACTORS_PER_MODULE";
+
+/// Default cap scales with compute: actors execute JS on a CPU, so there is no
+/// throughput to gain from many more runnable isolates per module than vCPUs —
+/// extra ones only occupy memory. `available_parallelism` respects cgroup
+/// limits, so container/VM resizes adjust this automatically.
+fn default_max_actors_per_module() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .saturating_mul(2)
+        .max(2)
+}
+
+/// Reap actors that have been idle for this long (seconds). 0 disables reaping.
+const EXO_DENO_POOL_IDLE_TIMEOUT_SECS: &str = "EXO_DENO_POOL_IDLE_TIMEOUT_SECS";
+const DEFAULT_IDLE_TIMEOUT_SECS: u64 = 60;
+
+struct PooledActor<C, M, R> {
+    actor: DenoActor<C, M, R>,
+    last_used: Instant,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ResolvedModule {
@@ -89,7 +120,14 @@ impl<C> DenoExecutorConfig<C> {
 pub struct DenoExecutorPool<C, M, R> {
     config: DenoExecutorConfig<C>,
     actor_pool_map: Arc<Mutex<DenoActorPoolMap<C, M, R>>>,
+    max_actors_per_module: usize,
     return_type: PhantomData<R>,
+}
+
+fn env_usize(env: &dyn Environment, key: &str, default: usize) -> usize {
+    env.get(key)
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .unwrap_or(default)
 }
 
 impl<C: Sync + Send + Debug + 'static, M: Sync + Send + 'static, R: Sync + Send + Debug + 'static>
@@ -114,9 +152,55 @@ impl<C: Sync + Send + Debug + 'static, M: Sync + Send + 'static, R: Sync + Send 
     }
 
     pub fn new_from_config(config: DenoExecutorConfig<C>) -> Self {
+        let env = config.additional_env.as_ref();
+        let max_actors_per_module = env_usize(
+            env,
+            EXO_DENO_POOL_MAX_ACTORS_PER_MODULE,
+            default_max_actors_per_module(),
+        )
+        .max(1);
+        let idle_timeout_secs = env_usize(
+            env,
+            EXO_DENO_POOL_IDLE_TIMEOUT_SECS,
+            DEFAULT_IDLE_TIMEOUT_SECS as usize,
+        ) as u64;
+
+        let actor_pool_map: Arc<Mutex<DenoActorPoolMap<C, M, R>>> =
+            Arc::new(Mutex::new(DenoActorPoolMap::default()));
+
+        // Reap idle actors so a burst of traffic doesn't become a permanent
+        // memory floor. Weak reference lets the task end when the pool drops.
+        // Skipped when no tokio runtime is available (e.g. sync construction in tests).
+        if idle_timeout_secs > 0
+            && let Ok(handle) = tokio::runtime::Handle::try_current()
+        {
+            let map_weak = Arc::downgrade(&actor_pool_map);
+            let idle = Duration::from_secs(idle_timeout_secs);
+            handle.spawn(async move {
+                let mut interval = tokio::time::interval(idle / 4);
+                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                loop {
+                    interval.tick().await;
+                    let Some(map) = map_weak.upgrade() else { break };
+                    let mut map = map.lock().await;
+                    for (path, pool) in map.iter_mut() {
+                        let before = pool.len();
+                        pool.retain(|p| p.actor.is_busy() || p.last_used.elapsed() < idle);
+                        let reaped = before - pool.len();
+                        if reaped > 0 {
+                            tracing::debug!(module = %path, reaped, remaining = pool.len(),
+                                "Reaped idle Deno actors");
+                        }
+                    }
+                    map.retain(|_, pool| !pool.is_empty());
+                }
+            });
+        }
+
         Self {
             config,
-            actor_pool_map: Arc::new(Mutex::new(DenoActorPoolMap::default())),
+            actor_pool_map,
+            max_actors_per_module,
             return_type: PhantomData,
         }
     }
@@ -166,26 +250,45 @@ impl<C: Sync + Send + Debug + 'static, M: Sync + Send + 'static, R: Sync + Send 
         script_path: &str,
         script: DenoScriptDefn,
     ) -> Result<DenoExecutor<C, M, R>, DenoError> {
-        // find or allocate a free actor in our pool
-        let actor = {
-            let mut actor_pool_map = self.actor_pool_map.lock().await;
-            let actor_pool = actor_pool_map.entry(script_path.to_string()).or_default();
+        // find or allocate a free actor in our pool; if the pool is at its
+        // per-module cap and every actor is busy, wait for one to free up
+        // instead of growing without bound (each actor is a whole V8 isolate).
+        let mut script = Some(script);
+        let wait_started = Instant::now();
+        let mut logged_wait = false;
+        loop {
+            {
+                let mut actor_pool_map = self.actor_pool_map.lock().await;
+                let actor_pool = actor_pool_map.entry(script_path.to_string()).or_default();
 
-            let free_actor = actor_pool.iter().find(|actor| !actor.is_busy());
+                if let Some(pooled) = actor_pool.iter_mut().find(|p| !p.actor.is_busy()) {
+                    pooled.last_used = Instant::now();
+                    return Ok(DenoExecutor {
+                        actor: pooled.actor.clone(),
+                    });
+                }
 
-            if let Some(actor) = free_actor {
-                // found a free actor!
-                actor.clone()
-            } else {
-                // no free actors; need to allocate a new DenoActor
-                let new_actor = self.create_actor(script_path, script)?;
-
-                actor_pool.push(new_actor.clone());
-                new_actor
+                if actor_pool.len() < self.max_actors_per_module {
+                    let new_actor =
+                        self.create_actor(script_path, script.take().expect("script consumed"))?;
+                    actor_pool.push(PooledActor {
+                        actor: new_actor.clone(),
+                        last_used: Instant::now(),
+                    });
+                    return Ok(DenoExecutor { actor: new_actor });
+                }
             }
-        };
 
-        Ok(DenoExecutor { actor })
+            if !logged_wait && wait_started.elapsed() > Duration::from_secs(5) {
+                logged_wait = true;
+                tracing::warn!(
+                    module = %script_path,
+                    max_actors = self.max_actors_per_module,
+                    "All Deno actors busy at pool cap; waiting for a free actor"
+                );
+            }
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
     }
 
     fn create_actor(
@@ -329,5 +432,19 @@ mod tests {
             .count();
 
         assert_eq!(result, total_futures);
+
+        // 10 concurrent executions must not grow the pool past the cap
+        let cap = default_max_actors_per_module();
+        let pool_size = executor_pool
+            .actor_pool_map
+            .lock()
+            .await
+            .get(module_path)
+            .map(|pool| pool.len())
+            .unwrap_or(0);
+        assert!(
+            pool_size >= 1 && pool_size <= cap,
+            "pool size {pool_size} exceeds cap {cap}"
+        );
     }
 }
