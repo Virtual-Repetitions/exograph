@@ -37,7 +37,18 @@ type DenoActorPool<C, M, R> = Vec<PooledActor<C, M, R>>;
 /// holds the module's full bundle in a V8 heap, so an unbounded pool converts
 /// the peak concurrency of each module into a permanent memory floor.
 const EXO_DENO_POOL_MAX_ACTORS_PER_MODULE: &str = "EXO_DENO_POOL_MAX_ACTORS_PER_MODULE";
-const DEFAULT_MAX_ACTORS_PER_MODULE: usize = 4;
+
+/// Default cap scales with compute: actors execute JS on a CPU, so there is no
+/// throughput to gain from many more runnable isolates per module than vCPUs —
+/// extra ones only occupy memory. `available_parallelism` respects cgroup
+/// limits, so container/VM resizes adjust this automatically.
+fn default_max_actors_per_module() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .saturating_mul(2)
+        .max(2)
+}
 
 /// Reap actors that have been idle for this long (seconds). 0 disables reaping.
 const EXO_DENO_POOL_IDLE_TIMEOUT_SECS: &str = "EXO_DENO_POOL_IDLE_TIMEOUT_SECS";
@@ -145,7 +156,7 @@ impl<C: Sync + Send + Debug + 'static, M: Sync + Send + 'static, R: Sync + Send 
         let max_actors_per_module = env_usize(
             env,
             EXO_DENO_POOL_MAX_ACTORS_PER_MODULE,
-            DEFAULT_MAX_ACTORS_PER_MODULE,
+            default_max_actors_per_module(),
         )
         .max(1);
         let idle_timeout_secs = env_usize(
@@ -423,6 +434,7 @@ mod tests {
         assert_eq!(result, total_futures);
 
         // 10 concurrent executions must not grow the pool past the cap
+        let cap = default_max_actors_per_module();
         let pool_size = executor_pool
             .actor_pool_map
             .lock()
@@ -431,8 +443,8 @@ mod tests {
             .map(|pool| pool.len())
             .unwrap_or(0);
         assert!(
-            pool_size >= 1 && pool_size <= DEFAULT_MAX_ACTORS_PER_MODULE,
-            "pool size {pool_size} exceeds cap {DEFAULT_MAX_ACTORS_PER_MODULE}"
+            pool_size >= 1 && pool_size <= cap,
+            "pool size {pool_size} exceeds cap {cap}"
         );
     }
 }
