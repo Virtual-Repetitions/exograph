@@ -411,12 +411,11 @@ impl JwtAuthenticator {
         }
 
         if let Some(descriptors) = provider_descriptors.as_ref() {
-            if oidc_url.is_some()
-                || oidc_urls.is_some()
-                || jwks_urls.is_some()
-                || direct_public_key.is_some()
-                || public_key_envs.is_some()
-            {
+            // Static public keys (EXO_JWT_PUBLIC_KEY_PEM / EXO_JWT_PUBLIC_KEY_PEM_ENVS)
+            // are additive validators and may coexist with provider config — e.g. a
+            // dedicated service keypair trusted alongside the OIDC/JWKS user-auth
+            // providers. Only the legacy URL-based provider envs conflict.
+            if oidc_url.is_some() || oidc_urls.is_some() || jwks_urls.is_some() {
                 return Err(JwtConfigurationError::InvalidSetup(format!(
                     "{EXO_JWT_PROVIDER_CONFIG} cannot be combined with legacy JWT environment variables"
                 )));
@@ -1640,6 +1639,42 @@ GBIdO8TlPVil1Dnd9iNPpQ==
         unsafe {
             std::env::remove_var("EXO_JWT_DEBUG");
         }
+    }
+
+    #[tokio::test]
+    async fn provider_config_combines_with_static_public_key() {
+        let jwks_url = spawn_jwks_server(STATIC_JWKS).await;
+
+        let provider_config = format!(
+            r#"[{{"name":"nhost","strategy":"jwks","jwks_url":"{jwks_url}","issuer_aliases":["hasura-auth"]}}]"#
+        );
+
+        let mut env = MapEnvironment::new();
+        env.set(EXO_JWT_PROVIDER_CONFIG, &provider_config);
+        env.set(EXO_JWT_PUBLIC_KEY_PEM, STATIC_PUBLIC_KEY_PEM);
+        env.set(EXO_JWT_PUBLIC_KEY_KID, STATIC_KEY_KID);
+
+        // Regression: this combination used to be rejected with "cannot be
+        // combined with legacy JWT environment variables". Static public keys
+        // are additive validators (e.g. a dedicated service keypair trusted
+        // alongside the OIDC/JWKS user-auth providers).
+        let authenticator = JwtAuthenticator::new_from_env(&env).await.unwrap().unwrap();
+
+        // A token signed with the static key validates alongside the provider.
+        let token = create_static_bearer_token();
+        let request =
+            request_head_with_headers(HashMap::from([("Authorization".to_string(), vec![token])]));
+        let claims = authenticator
+            .extract_authentication(&request)
+            .await
+            .unwrap();
+        assert_eq!(
+            claims
+                .get("claims.jwt.hasura.io")
+                .and_then(|value| value.get("x-hasura-user-id"))
+                .and_then(Value::as_str),
+            Some("15de885c-6cb0-480f-97ce-b8b8ece225d5")
+        );
     }
 
     #[tokio::test]
