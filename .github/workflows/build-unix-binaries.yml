@@ -1,0 +1,157 @@
+# Workflow to build and publish the Linux and macOS binaries on every merge to main.
+#
+# Performs, per target (x86_64-unknown-linux-gnu, aarch64-apple-darwin):
+# - Build exo, exo-server, exo-lsp and exo-mcp-bridge in release mode
+# - Package them (plus LICENSE) into exograph-<target>.zip with a SHA256 checksum
+# - Upload them as a workflow artifact
+# - Publish them to the `v<version>` GitHub release (version read from Cargo.toml), creating it if needed
+#
+# This mirrors build-windows-binary.yml and the tagging scheme used by
+# build-docker-image.yml so the image and the per-platform binaries for a given
+# version line up. Linux builds on ubuntu-22.04 for an older glibc baseline so
+# the binary runs on both 22.04 and newer CI runners.
+#
+# The Linux zip is what vreps-exo's ensure-exograph-release.mjs downloads in
+# consumer CI (jrnba_app contract snapshot / flow tests / harness); the GHCR
+# image extraction in exo-release.sh remains the fallback.
+
+name: Build Unix Binaries
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: 24
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            deps-script: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+          - os: macos-14
+            target: aarch64-apple-darwin
+            deps-script: brew install protobuf
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read Exograph version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(awk -F\" '/^version =/ {print $2; exit}' Cargo.toml)
+          if [ -z "$VERSION" ]; then
+            echo "Unable to determine version from Cargo.toml" >&2
+            exit 1
+          fi
+          echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Detected version: ${VERSION}"
+
+      - name: Install deps
+        run: ${{ matrix.deps-script }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}-release
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Remove stale rusty_v8 checksums
+        shell: bash
+        run: ./scripts/fix-rusty-v8-cache.sh target
+
+      - name: Build
+        run: cargo build -p cli -p server-actix -p lsp -p mcp-bridge --target ${{ matrix.target }} --release
+
+      - name: Smoke test the binaries
+        shell: bash
+        run: target/${{ matrix.target }}/release/exo --version
+
+      - name: Create zip of binaries
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/exo dist/
+          cp target/${{ matrix.target }}/release/exo-server dist/
+          cp target/${{ matrix.target }}/release/exo-lsp dist/
+          cp target/${{ matrix.target }}/release/exo-mcp-bridge dist/
+          cp LICENSE dist/
+          cd dist/
+          zip exograph-${{ matrix.target }}.zip ./*
+
+      - name: Generate SHA256 checksum
+        shell: bash
+        run: |
+          cd dist/
+          if command -v sha256sum > /dev/null 2>&1; then
+            HASH=$(sha256sum exograph-${{ matrix.target }}.zip | awk '{print $1}')
+          else
+            HASH=$(shasum -a 256 exograph-${{ matrix.target }}.zip | awk '{print $1}')
+          fi
+          printf '%s' "$HASH" > exograph-${{ matrix.target }}.zip.sha256
+          cat exograph-${{ matrix.target }}.zip.sha256
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: exograph-${{ matrix.target }}
+          path: |
+            dist/exograph-${{ matrix.target }}.zip
+            dist/exograph-${{ matrix.target }}.zip.sha256
+
+      - name: Publish to release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Creating release $TAG"
+            # Both matrix jobs (and the Windows workflow) can race on creation;
+            # losing the race is fine — the upload below targets it either way.
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes "Exograph ${{ steps.version.outputs.value }} binaries (built from ${GITHUB_SHA})" \
+              --target "$GITHUB_SHA" \
+              || echo "Release $TAG appeared concurrently; continuing"
+          else
+            echo "Release $TAG already exists, uploading assets to it"
+          fi
+          gh release upload "$TAG" \
+            "dist/exograph-${{ matrix.target }}.zip" \
+            "dist/exograph-${{ matrix.target }}.zip.sha256" \
+            --clobber
+
+      - name: Summary
+        shell: bash
+        run: |
+          {
+            echo "### 📦 ${{ matrix.target }} binaries published"
+            echo ""
+            echo "**Release:** v${{ steps.version.outputs.value }}"
+            echo "**Target:** ${{ matrix.target }}"
+            echo "**Commit:** ${GITHUB_SHA}"
+          } >> "$GITHUB_STEP_SUMMARY"
