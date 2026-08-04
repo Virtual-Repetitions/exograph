@@ -1662,10 +1662,8 @@ GBIdO8TlPVil1Dnd9iNPpQ==
 
         // A token signed with the static key validates alongside the provider.
         let token = create_static_bearer_token();
-        let request = request_head_with_headers(HashMap::from([(
-            "Authorization".to_string(),
-            vec![token],
-        )]));
+        let request =
+            request_head_with_headers(HashMap::from([("Authorization".to_string(), vec![token])]));
         let claims = authenticator
             .extract_authentication(&request)
             .await
