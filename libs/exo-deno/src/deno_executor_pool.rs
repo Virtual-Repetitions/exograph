@@ -250,45 +250,44 @@ impl<C: Sync + Send + Debug + 'static, M: Sync + Send + 'static, R: Sync + Send 
         script_path: &str,
         script: DenoScriptDefn,
     ) -> Result<DenoExecutor<C, M, R>, DenoError> {
-        // find or allocate a free actor in our pool; if the pool is at its
-        // per-module cap and every actor is busy, wait for one to free up
-        // instead of growing without bound (each actor is a whole V8 isolate).
-        let mut script = Some(script);
-        let wait_started = Instant::now();
-        let mut logged_wait = false;
-        loop {
-            {
-                let mut actor_pool_map = self.actor_pool_map.lock().await;
-                let actor_pool = actor_pool_map.entry(script_path.to_string()).or_default();
+        // Find a free pooled actor, or grow the pool up to the per-module cap.
+        // At the cap with all actors busy, create a TRANSIENT actor that is not
+        // pooled and is dropped after this execution. Never wait: executions can
+        // nest (a Deno resolver calling back into GraphQL may need another actor
+        // of the same module), so blocking here can deadlock — stuck requests
+        // then hold DB connections until the whole pool starves.
+        {
+            let mut actor_pool_map = self.actor_pool_map.lock().await;
+            let actor_pool = actor_pool_map.entry(script_path.to_string()).or_default();
 
-                if let Some(pooled) = actor_pool.iter_mut().find(|p| !p.actor.is_busy()) {
-                    pooled.last_used = Instant::now();
-                    return Ok(DenoExecutor {
-                        actor: pooled.actor.clone(),
-                    });
-                }
-
-                if actor_pool.len() < self.max_actors_per_module {
-                    let new_actor =
-                        self.create_actor(script_path, script.take().expect("script consumed"))?;
-                    actor_pool.push(PooledActor {
-                        actor: new_actor.clone(),
-                        last_used: Instant::now(),
-                    });
-                    return Ok(DenoExecutor { actor: new_actor });
-                }
+            if let Some(pooled) = actor_pool.iter_mut().find(|p| !p.actor.is_busy()) {
+                pooled.last_used = Instant::now();
+                return Ok(DenoExecutor {
+                    actor: pooled.actor.clone(),
+                });
             }
 
-            if !logged_wait && wait_started.elapsed() > Duration::from_secs(5) {
-                logged_wait = true;
-                tracing::warn!(
-                    module = %script_path,
-                    max_actors = self.max_actors_per_module,
-                    "All Deno actors busy at pool cap; waiting for a free actor"
-                );
+            if actor_pool.len() < self.max_actors_per_module {
+                let new_actor = self.create_actor(script_path, script)?;
+                actor_pool.push(PooledActor {
+                    actor: new_actor.clone(),
+                    last_used: Instant::now(),
+                });
+                return Ok(DenoExecutor { actor: new_actor });
             }
-            tokio::time::sleep(Duration::from_millis(2)).await;
         }
+
+        // Overflow: pay isolate startup for this one execution rather than
+        // permanently growing the pool (memory floor) or waiting (deadlock).
+        tracing::debug!(
+            module = %script_path,
+            max_actors = self.max_actors_per_module,
+            "Deno actor pool at cap; creating transient overflow actor"
+        );
+        let transient_actor = self.create_actor(script_path, script)?;
+        Ok(DenoExecutor {
+            actor: transient_actor,
+        })
     }
 
     fn create_actor(
@@ -446,5 +445,68 @@ mod tests {
             pool_size >= 1 && pool_size <= cap,
             "pool size {pool_size} exceeds cap {cap}"
         );
+    }
+
+    #[tokio::test]
+    async fn test_actor_executor_concurrent_at_cap_one() {
+        // With the pool capped at a single actor, concurrent executions must
+        // still all complete (overflow actors, never waiting — waiting can
+        // deadlock when executions nest) and the pool must stay at the cap.
+        let module_path = "file://test_js/direct.js";
+        let module_script = include_str!("test_js/direct.js").to_string();
+
+        let mut env = MapEnvironment::new();
+        env.set("EXO_DENO_POOL_MAX_ACTORS_PER_MODULE", "1");
+
+        let executor_pool = DenoExecutorPool::<(), (), ()>::new(
+            vec![],
+            vec![],
+            None,
+            Vec::new,
+            |_, _| {},
+            Arc::new(env),
+        );
+
+        let handles = (0..10).map(|_| {
+            executor_pool.execute(
+                module_path,
+                DenoScriptDefn {
+                    modules: vec![(
+                        ModuleSpecifier::parse(module_path).unwrap(),
+                        ResolvedModule::Module(
+                            module_script.clone(),
+                            ModuleType::JavaScript,
+                            ModuleSpecifier::parse(module_path).unwrap(),
+                            false,
+                        ),
+                    )]
+                    .into_iter()
+                    .collect(),
+                },
+                "addAndDouble",
+                vec![
+                    Arg::Serde(Value::Number(4.into())),
+                    Arg::Serde(Value::Number(2.into())),
+                ],
+                (),
+                (),
+            )
+        });
+
+        let ok = join_all(handles)
+            .await
+            .iter()
+            .filter(|res| res.as_ref().unwrap() == 12)
+            .count();
+        assert_eq!(ok, 10);
+
+        let pool_size = executor_pool
+            .actor_pool_map
+            .lock()
+            .await
+            .get(module_path)
+            .map(|pool| pool.len())
+            .unwrap_or(0);
+        assert_eq!(pool_size, 1, "pool must stay at cap 1, got {pool_size}");
     }
 }
