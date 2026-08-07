@@ -54,8 +54,13 @@ impl FieldResolver<QueryResponse, SystemResolutionError, GraphQLSystemResolver>
         // A proceed call in an around interceptor or a module call may have returned more fields
         // that necessary, so we need to filter out the fields that are not needed.
         // TODO: Validate that all requested fields are present in the response.
+        // NOTE: only project when the query actually selected subfields — a module
+        // operation returning a Json SCALAR has no subfields, and projecting its
+        // object onto an empty selection collapsed every Json return to `{}`.
         let field_selected_response_body = match body {
-            QueryResponseBody::Json(value @ serde_json::Value::Object(_)) => {
+            QueryResponseBody::Json(value @ serde_json::Value::Object(_))
+                if !field.subfields.is_empty() =>
+            {
                 let resolved_set = value
                     .resolve_fields(&field.subfields, &(), request_context)
                     .await?;
