@@ -189,3 +189,26 @@ so seeing changes requires `playground/lib` build → `playground/app` build →
   ordering args, etc.) lack descriptions server-side.
 - Upstream GraphiQL's built-in search matches type/field names only (no
   descriptions); deeper search would be an upstream-shaped change.
+
+---
+
+## 6. Playground GitHub-OAuth gate (PR #61) — MCP endpoint not yet covered
+
+**Status:** feature on fork (PR #61, 2026-08-25); one known gap
+
+The playground (and, while the gate is configured, introspection queries) can
+be put behind GitHub OAuth via `EXO_PLAYGROUND_AUTH_GITHUB_CLIENT_ID` /
+`_CLIENT_SECRET` / `_ORG` / `_USERS` / `_SESSION_SECRET`. Rationale and setup
+in the PR description.
+
+**Gap:** the MCP endpoint (`EXO_ENABLE_MCP`, **on by default**, and enabled on
+our Fly deployments since nothing sets it) has its own introspection tool
+(`crates/mcp-router/src/introspection_tool.rs`) that this gate does not cover —
+the schema remains fetchable via `/mcp` even with the playground gated. Until
+MCP is gated or needed remotely, set `EXO_ENABLE_MCP=false` on prod/staging.
+
+**Docs links, for reference:** internal-doc links in the playground need no
+feature work. `//!` at the top of an `.exo` file becomes `__schema.description`
+and renders as markdown (links included) on the doc explorer's landing page;
+`///` doc comments on types/fields do the same per element. As of PR #60 those
+links open in a new tab.
