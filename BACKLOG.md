@@ -149,3 +149,43 @@ plain `Error` and so silently swallowed every auth message our resolvers raised
 **Wanted.** Some way to mark a message as client-visible that survives being
 wrapped — an error `cause` chain that is walked when deciding visibility would
 be enough.
+
+---
+
+## 5. Playground paper cuts (partially fixed on fork, 2026-08-25)
+
+A pass over `playground/lib` found and fixed three root causes. Playground
+assets are **embedded in the `exo` binary at compile time**
+(`crates/playground-router/src/playground.rs` includes `playground/app/dist`),
+so seeing changes requires `playground/lib` build → `playground/app` build →
+`cargo build`.
+
+**Fixed:**
+
+- **Cmd+K doc search never worked.** The fork's
+  `KEY_MAP.searchInDocs.key = "Ctrl-K"` line only changed the label in the
+  shortcuts dialog; the real listener in `@graphiql/plugin-doc-explorer` is
+  hardcoded to Cmd/Ctrl+**Alt**+K. Fixed with our own capture-phase Cmd+K /
+  Ctrl+K listener in `GraphiQLPlayground.tsx`.
+- **Saved-profile headers didn't apply until toggled.** Three stacked causes in
+  `HeaderProfileSelector.tsx`: (1) GraphiQL renders one editor-tool section
+  whose `aria-label` flips between "Variables" and "Headers"; the selector
+  portal polled for `[aria-label="Headers"]`, so with the default Variables tab
+  the whole profile machinery never mounted until the Headers tab was opened.
+  (2) Generated JWTs are minted with a 10-minute expiry and were never
+  refreshed. (3) A non-persisted `signedIn` flag blocked generated profiles
+  after every reload. Fixed: apply-logic now always mounts (UI portals in/out
+  via MutationObserver), tokens re-mint every 4 minutes and on window focus,
+  sign-in gate removed.
+
+**Still open / notes:**
+
+- "Limited documentation in the UI": doc comments in `.exo` files DO flow
+  through introspection (`doc_comments` is threaded through the postgres
+  builders and introspection resolvers), and the doc explorer plugin is
+  enabled. Most of the perceived gap was the unreachable doc search (fixed
+  above) plus few doc comments written in our own schema. If docs still feel
+  thin, next step is auditing which generated constructs (filter inputs,
+  ordering args, etc.) lack descriptions server-side.
+- Upstream GraphiQL's built-in search matches type/field names only (no
+  descriptions); deeper search would be an upstream-shaped change.

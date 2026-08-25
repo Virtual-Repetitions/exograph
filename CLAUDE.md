@@ -31,6 +31,12 @@ Mitigations in place:
   of silently escalating to a public repo. Re-run it in any fresh clone.
 - Always pass `-R Virtual-Repetitions/exograph` explicitly on `gh` commands
   anyway. Do not rely on the default.
+- The `upstream` remote's **push URL is set to the sentinel
+  `DISABLED_DO_NOT_PUSH_TO_UPSTREAM`** (fetch URL is untouched), so
+  `git push upstream ...` fails on a nonexistent URL instead of reaching the
+  public repo. Re-run
+  `git remote set-url --push upstream DISABLED_DO_NOT_PUSH_TO_UPSTREAM` in any
+  fresh clone, and never "fix" this URL.
 
 ### Where fork work goes instead
 
