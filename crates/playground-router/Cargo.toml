@@ -9,8 +9,10 @@ mime_guess = "2.0.5"
 async-trait.workspace = true
 include_dir.workspace = true
 http.workspace = true
+reqwest = { workspace = true, features = ["form", "json"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+tracing.workspace = true
 
 common = { path = "../common" }
 exo-env = { path = "../../libs/exo-env" }

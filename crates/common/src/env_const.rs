@@ -58,6 +58,16 @@ pub const EXO_ENABLE_MCP: &str = "EXO_ENABLE_MCP";
 
 pub const EXO_WWW_AUTHENTICATE_HEADER: &str = "EXO_WWW_AUTHENTICATE_HEADER";
 
+// GitHub OAuth gate for the playground (and introspection while it is configured).
+// Setting the client id enables the gate; the rest must then be consistent (see
+// common::playground_auth).
+pub const EXO_PLAYGROUND_AUTH_GITHUB_CLIENT_ID: &str = "EXO_PLAYGROUND_AUTH_GITHUB_CLIENT_ID";
+pub const EXO_PLAYGROUND_AUTH_GITHUB_CLIENT_SECRET: &str =
+    "EXO_PLAYGROUND_AUTH_GITHUB_CLIENT_SECRET";
+pub const EXO_PLAYGROUND_AUTH_GITHUB_ORG: &str = "EXO_PLAYGROUND_AUTH_GITHUB_ORG"; // Allow members of this GitHub org
+pub const EXO_PLAYGROUND_AUTH_GITHUB_USERS: &str = "EXO_PLAYGROUND_AUTH_GITHUB_USERS"; // Comma-separated list of allowed GitHub logins
+pub const EXO_PLAYGROUND_AUTH_SESSION_SECRET: &str = "EXO_PLAYGROUND_AUTH_SESSION_SECRET"; // HMAC key for the session cookie (>= 32 bytes)
+
 #[derive(Debug)]
 pub enum DeploymentMode {
     Yolo,               // Corresponds to "exo yolo"
