@@ -15,7 +15,7 @@ import React, {
   useMemo,
 } from "react";
 import { GraphiQL, HISTORY_PLUGIN } from "graphiql";
-import { KEY_MAP } from "@graphiql/react";
+import { KEY_MAP, isMacOs } from "@graphiql/react";
 import {
   Fetcher,
   FetcherOpts,
@@ -35,8 +35,39 @@ import "graphiql/style.css";
 import "@graphiql/plugin-explorer/style.css";
 import { useTheme } from "../util/theme";
 
-// Align Quick Search with Cmd+K / Ctrl+K instead of requiring Alt.
+// Align Quick Search with Cmd+K / Ctrl+K instead of requiring Alt. This only
+// fixes the label shown in the shortcuts dialog; the actual listener is
+// registered in useDocSearchShortcut below (the built-in one is hardcoded to
+// Cmd/Ctrl+Alt+K inside @graphiql/plugin-doc-explorer).
 KEY_MAP.searchInDocs.key = "Ctrl-K";
+
+// Cmd+K (Mac) / Ctrl+K: open the Documentation Explorer and focus its search.
+function useDocSearchShortcut() {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const modifierPressed = isMacOs ? event.metaKey : event.ctrlKey;
+      // Leave Cmd/Ctrl+Alt+K to the built-in doc-explorer listener.
+      if (!modifierPressed || event.altKey || event.shiftKey || event.code !== "KeyK") {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      document
+        .querySelector<HTMLElement>(
+          '.graphiql-sidebar button[aria-label="Show Documentation Explorer"]'
+        )
+        ?.click();
+      requestAnimationFrame(() => {
+        document
+          .querySelector<HTMLElement>(".graphiql-doc-explorer-search-input")
+          ?.click();
+      });
+    };
+    // Capture phase so the shortcut also works while a Monaco editor has focus.
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, []);
+}
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface GraphiQLPlaygroundProps extends BasePlaygroundComponentProps<GraphiQLProps> {}
@@ -44,6 +75,8 @@ export interface GraphiQLPlaygroundProps extends BasePlaygroundComponentProps<Gr
 export function GraphiQLPlayground({ tab: graphql, auth }: GraphiQLPlaygroundProps) {
   const { fetcher } = graphql;
   const { jwtSourceHeader, jwtSourceCookie } = auth;
+
+  useDocSearchShortcut();
 
   const dataFetcher: Fetcher = async (
     graphQLParams: FetcherParams,
