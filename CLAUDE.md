@@ -31,12 +31,10 @@ Mitigations in place:
   of silently escalating to a public repo. Re-run it in any fresh clone.
 - Always pass `-R Virtual-Repetitions/exograph` explicitly on `gh` commands
   anyway. Do not rely on the default.
-- The `upstream` remote's **push URL is set to the sentinel
-  `DISABLED_DO_NOT_PUSH_TO_UPSTREAM`** (fetch URL is untouched), so
-  `git push upstream ...` fails on a nonexistent URL instead of reaching the
-  public repo. Re-run
-  `git remote set-url --push upstream DISABLED_DO_NOT_PUSH_TO_UPSTREAM` in any
-  fresh clone, and never "fix" this URL.
+- The `upstream` remote has been **removed entirely** (2026-08-25; we do not
+  sync from upstream). `origin` (the fork) is the only remote. Never re-add an
+  `exograph/exograph` remote. If upstream code must be consulted, read it on
+  github.com or in a throwaway clone outside this repo.
 
 ### Where fork work goes instead
 
