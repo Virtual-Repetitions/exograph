@@ -211,7 +211,7 @@ mod tests {
             element_to_sql_param(elem, &Type::INT4)
         }
 
-        let flat = to_sql_array(&vec![1, 2, 3], Type::INT4, flat_entry, &i32_to_sql_param).unwrap();
+        let flat = to_sql_array(&[1, 2, 3], Type::INT4, flat_entry, &i32_to_sql_param).unwrap();
 
         let nested_elems = vec![
             Element::List(vec![Element::Single(1), Element::Single(2)]),
