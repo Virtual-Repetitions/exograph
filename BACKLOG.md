@@ -263,3 +263,52 @@ feature work. `//!` at the top of an `.exo` file becomes `__schema.description`
 and renders as markdown (links included) on the doc explorer's landing page;
 `///` doc comments on types/fields do the same per element. As of PR #60 those
 links open in a new tab.
+
+---
+
+## 7. The playground gate closes `__typename`, breaking liveness probes
+
+**Status:** open — worked around in `jrnba_app` by changing the probe query
+**Found:** 2026-08-26, on the first staging deploy of v0.32.0
+
+Enabling `EXO_PLAYGROUND_AUTH_GITHUB_CLIENT_ID` wraps the introspection resolver
+in `PlaygroundSessionGuardedResolver`
+(`crates/system-router/src/system_router.rs:154`), which rejects anything the
+introspection subsystem serves. That subsystem serves **`__typename`** as well as
+`__schema` and `__type` (`introspection-subsystem/introspection-resolver/src/root_resolver.rs:43`),
+so a gated deployment answers `query { __typename }` with `Not authorized`.
+
+Verified on staging:
+
+```console
+$ curl -s -X POST https://<host>/graphql -H 'content-type: application/json' \
+    -d '{"query":"query UptimePing { __typename }"}'
+{"errors": [{"message":"Not authorized"}]}
+```
+
+No credential fixes it. The guard checks for a playground **session cookie**, so
+even a valid admin JWT is rejected — confirmed by re-running the above with one
+attached. Only a browser that completed the GitHub OAuth flow can satisfy it.
+
+**Why it matters.** `{ __typename }` is the conventional GraphQL liveness ping —
+cheap, schema-independent, and what monitors reach for. `jrnba_app`'s
+`/api/uptime` used exactly that, so turning the gate on converted a healthy
+system into a paging one. It is also the kind of breakage that looks like an
+outage rather than a config change, because the error says `Not authorized`
+without naming the gate.
+
+Nested `__typename` is unaffected — it resolves through the owning subsystem's
+field resolver, not the introspection subsystem — so Apollo's automatic
+`__typename` injection keeps working and ordinary app traffic is fine. Only a
+root-level `__typename`-only query hits this.
+
+**Suggested fix.** Exempt `__typename` from the guard. It returns the literal
+schema-independent string `"Query"` and discloses nothing that gating
+`__schema`/`__type` is meant to protect, so the guard could pass it through to
+the inner resolver rather than rejecting. Alternatively, gate on the field name
+inside `PlaygroundSessionGuardedResolver::resolve` instead of on the resolver as
+a whole.
+
+**Workaround in use.** `jrnba_app`'s uptime check now calls `healthCheckE2E`
+(a real resolver, authenticated by a `secret` argument rather than a JWT, with
+external dependencies switched off) instead of pinging `__typename`.
