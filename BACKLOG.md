@@ -201,11 +201,41 @@ be put behind GitHub OAuth via `EXO_PLAYGROUND_AUTH_GITHUB_CLIENT_ID` /
 `_CLIENT_SECRET` / `_ORG` / `_USERS` / `_SESSION_SECRET`. Rationale and setup
 in the PR description.
 
-**Gap:** the MCP endpoint (`EXO_ENABLE_MCP`, **on by default**, and enabled on
-our Fly deployments since nothing sets it) has its own introspection tool
-(`crates/mcp-router/src/introspection_tool.rs`) that this gate does not cover —
-the schema remains fetchable via `/mcp` even with the playground gated. Until
-MCP is gated or needed remotely, set `EXO_ENABLE_MCP=false` on prod/staging.
+**Gap:** the MCP endpoint (`EXO_ENABLE_MCP`, **on by default**, and live on our
+Fly deployments since nothing sets it) is not covered by this gate, or by any
+other. Verified 2026-08-26:
+
+- `McpRouter::route` performs **no authentication of any kind** — `suitable()`
+  matches on path and HTTP method only. There is no shared-secret / API-key
+  setting for MCP anywhere in the codebase.
+- A single unauthenticated `tools/list` returns the **entire GraphQL schema**.
+  `EXO_MCP_MODE` defaults to `combined`, which embeds the full introspection
+  SDL in the `execute_query` tool's *description*, and `handle_tools_list`
+  renders every tool's description. No tool call is required.
+- **`EXO_INTROSPECTION=false` does not stop this.** `create_mcp_router`
+  (`crates/system-router/src/system_router.rs`) constructs its own
+  `IntrospectionResolver` unconditionally and never consults
+  `introspection_mode`. The same separate-instance problem means PR #61's
+  session guard does not reach it either.
+- MCP also runs with `TrustedDocumentEnforcement::DoNotEnforce`, so if we ever
+  lock `/graphql` to persisted queries, `/mcp` stays an arbitrary-query surface.
+
+**Not** a data-exposure hole: `execute_query` resolves through the normal
+GraphQL pipeline with the request's context, so `@access` rules apply and an
+anonymous MCP caller gets exactly anonymous-role data — the same as an
+anonymous POST to `/graphql`. The exposure is the schema plus an
+unauthenticated arbitrary-query surface.
+
+**What exists for auth today:** JWTs flow through identically to GraphQL (so
+`@access` works), and `EXO_WWW_AUTHENTICATE_HEADER` adds a `WWW-Authenticate`
+header on 401 as an OAuth discovery hint for MCP clients. Neither gates the
+endpoint.
+
+**Action:** `EXO_ENABLE_MCP=false` on prod/staging — verified to remove the
+router from the chain entirely (`system_router.rs:328`), not merely hide the
+playground's MCP tab. If we later want MCP remotely, the fix is to extend the
+PR #61 session/JWT gate over `McpRouter::route` and to have `create_mcp_router`
+respect `introspection_mode`.
 
 **Docs links, for reference:** internal-doc links in the playground need no
 feature work. `//!` at the top of an `.exo` file becomes `__schema.description`
