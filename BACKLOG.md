@@ -152,7 +152,7 @@ be enough.
 
 ---
 
-## 5. Playground paper cuts (partially fixed on fork, 2026-08-25)
+## 5. Playground paper cuts — shipped in v0.31.0 (PR #60)
 
 A pass over `playground/lib` found and fixed three root causes. Playground
 assets are **embedded in the `exo` binary at compile time**
@@ -192,18 +192,38 @@ so seeing changes requires `playground/lib` build → `playground/app` build →
 
 ---
 
-## 6. Playground GitHub-OAuth gate (PR #61) — MCP endpoint not yet covered
+## 6. Endpoint auth for the playground and MCP — shipped in v0.31.0 / v0.32.0
 
-**Status:** feature on fork (PR #61, 2026-08-25); one known gap
+**Status:** both gates shipped (PR #61 in v0.31.0, PR #63 in v0.32.0).
+**Not yet enabled on any deployment** — they are opt-in and nothing sets the
+variables, so staging and production remain open until someone does.
 
 The playground (and, while the gate is configured, introspection queries) can
 be put behind GitHub OAuth via `EXO_PLAYGROUND_AUTH_GITHUB_CLIENT_ID` /
-`_CLIENT_SECRET` / `_ORG` / `_USERS` / `_SESSION_SECRET`. Rationale and setup
-in the PR description.
+`_CLIENT_SECRET` / `_ORG` / `_USERS` / `_SESSION_SECRET`. The MCP endpoint can
+be gated with `EXO_MCP_SECRET` (presented in `X-Exo-MCP-Secret`), and a valid
+playground session is accepted in its place, so enabling the playground gate
+also closes MCP. Rationale and setup in the PR descriptions.
 
-**Gap:** the MCP endpoint (`EXO_ENABLE_MCP`, **on by default**, and live on our
-Fly deployments since nothing sets it) is not covered by this gate, or by any
-other. Verified 2026-08-26:
+**Remaining open items:**
+
+- Neither gate has been exercised against a real GitHub OAuth app; the MCP
+  secret was verified end-to-end against a running server, the OAuth flow was
+  not. Needs one staging pass.
+- MCP still runs with `TrustedDocumentEnforcement::DoNotEnforce`, so if we ever
+  lock `/graphql` to persisted queries, `/mcp` stays an arbitrary-query surface
+  for authenticated callers.
+- `create_mcp_router` still ignores `introspection_mode`. Left deliberately:
+  MCP's purpose is to hand the schema to an LLM, and honoring
+  `EXO_INTROSPECTION=false` there would break MCP in production. The auth gate
+  is the intended fix instead.
+
+<details>
+<summary>Original finding (2026-08-26), kept for the record</summary>
+
+The MCP endpoint (`EXO_ENABLE_MCP`, **on by default**, and live on our
+Fly deployments since nothing sets it) was not covered by the playground gate,
+or by any other:
 
 - `McpRouter::route` performs **no authentication of any kind** — `suitable()`
   matches on path and HTTP method only. There is no shared-secret / API-key
@@ -231,11 +251,12 @@ unauthenticated arbitrary-query surface.
 header on 401 as an OAuth discovery hint for MCP clients. Neither gates the
 endpoint.
 
-**Action:** `EXO_ENABLE_MCP=false` on prod/staging — verified to remove the
-router from the chain entirely (`system_router.rs:328`), not merely hide the
-playground's MCP tab. If we later want MCP remotely, the fix is to extend the
-PR #61 session/JWT gate over `McpRouter::route` and to have `create_mcp_router`
-respect `introspection_mode`.
+**Action at the time:** `EXO_ENABLE_MCP=false` on prod/staging — verified to
+remove the router from the chain entirely (`system_router.rs:328`), not merely
+hide the playground's MCP tab. Still a valid option; `EXO_MCP_SECRET` is now the
+alternative for deployments that want MCP to stay reachable.
+
+</details>
 
 **Docs links, for reference:** internal-doc links in the playground need no
 feature work. `//!` at the top of an `.exo` file becomes `__schema.description`
