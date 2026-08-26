@@ -14,6 +14,7 @@ pub mod env_const;
 pub mod env_processing;
 pub mod http;
 pub mod introspection;
+pub mod mcp_auth;
 pub mod operation_payload;
 pub mod playground_auth;
 pub mod router;

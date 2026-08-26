@@ -68,6 +68,10 @@ pub const EXO_PLAYGROUND_AUTH_GITHUB_ORG: &str = "EXO_PLAYGROUND_AUTH_GITHUB_ORG
 pub const EXO_PLAYGROUND_AUTH_GITHUB_USERS: &str = "EXO_PLAYGROUND_AUTH_GITHUB_USERS"; // Comma-separated list of allowed GitHub logins
 pub const EXO_PLAYGROUND_AUTH_SESSION_SECRET: &str = "EXO_PLAYGROUND_AUTH_SESSION_SECRET"; // HMAC key for the session cookie (>= 32 bytes)
 
+// Shared secret gating the MCP endpoint. Clients present it in the
+// `X-Exo-MCP-Secret` header. See common::mcp_auth.
+pub const EXO_MCP_SECRET: &str = "EXO_MCP_SECRET";
+
 #[derive(Debug)]
 pub enum DeploymentMode {
     Yolo,               // Corresponds to "exo yolo"
