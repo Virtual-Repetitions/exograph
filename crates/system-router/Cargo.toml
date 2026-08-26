@@ -5,6 +5,7 @@ edition.workspace = true
 publish = false
 
 [dependencies]
+async-graphql-parser.workspace = true
 async-trait.workspace = true
 tracing.workspace = true
 http.workspace = true

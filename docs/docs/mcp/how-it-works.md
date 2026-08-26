@@ -30,6 +30,28 @@ EXO_MCP_MODE=separate exo dev
 
 By default, Exograph's MCP server doesn't expose any mutations (even if access control allows them). However, you can enable mutations selectively by [creating a profile](profiles.md).
 
+## Securing the MCP endpoint
+
+The MCP endpoint has no authentication of its own by default: anyone who can reach it can list the tools — whose descriptions include the full GraphQL schema — and invoke `execute_query`. Note that `EXO_INTROSPECTION=false` does **not** hide the schema here, because the MCP server builds its own introspection schema so that it keeps working in production.
+
+Data is still protected: `execute_query` runs through the normal GraphQL pipeline, so your access control rules apply against whatever JWT the request carries, and an unauthenticated caller sees only what an unauthenticated caller of `/graphql` would. What an open endpoint exposes is the schema, plus the ability to run arbitrary queries at that access level.
+
+To require a shared secret, set `EXO_MCP_SECRET` (at least 16 characters; generate one with `openssl rand -base64 32`). Clients must then send it in the `X-Exo-MCP-Secret` header:
+
+```sh
+EXO_MCP_SECRET=$(openssl rand -base64 32) exo dev
+```
+
+With the [bridge](bridge.md), pass it as a header:
+
+```sh
+exo-mcp-bridge --endpoint https://example.com/mcp --header X-Exo-MCP-Secret=<secret>
+```
+
+A request is also accepted if it carries a valid playground sign-in session, so that the playground's MCP tab keeps working for a signed-in user. Consequently, **configuring the playground's GitHub OAuth gate also closes the MCP endpoint** — otherwise MCP would remain a way around the gate you just enabled.
+
+The secret authenticates the *caller of the endpoint*; it is not a substitute for access control. Keep using JWTs and `@access` rules to decide what data a caller may see.
+
 ## Disabling MCP API
 
 Exograph's MCP server is enabled by default. To disable the MCP endpoint, set the `EXO_ENABLE_MCP` environment variable to `false`.
