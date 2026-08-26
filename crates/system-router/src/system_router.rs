@@ -11,6 +11,9 @@ use std::{fs::File, io::BufReader, path::Path, sync::Arc};
 
 use common::env_const::{EXO_ENABLE_MCP, EXO_UNSTABLE_ENABLE_RPC_API};
 use common::introspection::{IntrospectionMode, introspection_mode};
+use common::playground_auth::PlaygroundAuthConfig;
+
+use crate::playground_session_guard::PlaygroundSessionGuardedResolver;
 use common::router::PlainRequestPayload;
 use core_plugin_shared::profile::{SchemaProfile, SchemaProfiles};
 use core_resolver::introspection::definition::schema::Schema;
@@ -144,6 +147,20 @@ pub async fn create_system_router_from_system(
                 (Some(introspection_resolver), vec![])
             }
         };
+
+        // When the playground's GitHub-OAuth gate is configured, hold
+        // introspection to the same session — gating only the playground HTML
+        // would leave the schema publicly fetchable.
+        let introspection_resolver: Option<Arc<dyn SubsystemGraphQLResolver + Send + Sync>> =
+            match PlaygroundAuthConfig::from_env(env.as_ref())
+                .map_err(SystemLoadingError::Config)?
+            {
+                Some(auth_config) => introspection_resolver.map(|resolver| {
+                    Arc::new(PlaygroundSessionGuardedResolver::new(resolver, auth_config))
+                        as Arc<dyn SubsystemGraphQLResolver + Send + Sync>
+                }),
+                None => introspection_resolver,
+            };
 
         GraphQLRouter::from_resolvers(
             graphql_resolvers.to_vec(),

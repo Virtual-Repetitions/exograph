@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0.
 
+mod playground_session_guard;
 pub mod system_router;
 
 pub use system_router::{

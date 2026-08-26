@@ -7899,8 +7899,10 @@ dependencies = [
  "http 1.4.0",
  "include_dir",
  "mime_guess",
+ "reqwest 0.13.2",
  "serde",
  "serde_json",
+ "tracing",
  "which 8.0.0",
 ]
 
@@ -8847,6 +8849,7 @@ dependencies = [
  "rustls-platform-verifier",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "sync_wrapper",
  "tokio",
  "tokio-rustls",
@@ -10706,6 +10709,7 @@ dependencies = [
 name = "system-router"
 version = "0.31.0"
 dependencies = [
+ "async-graphql-parser",
  "async-trait",
  "common",
  "core-plugin-interface",

@@ -14,6 +14,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use common::context::RequestContext;
 use common::http::{Headers, RequestHead, RequestPayload, ResponsePayload};
+use common::playground_auth::{PlaygroundAuthConfig, request_session};
 use common::router::Router;
 use common::{
     env_const::get_playground_http_path,
@@ -23,11 +24,15 @@ use common::{
 use exo_env::Environment;
 use http::StatusCode;
 
+use crate::auth;
 use crate::playground;
 
 pub struct PlaygroundRouterConfig {
     playground_path: String,
     env: Arc<dyn Environment>,
+    /// `Err` means the auth gate is misconfigured — the playground then fails
+    /// closed (500) rather than serving openly.
+    auth: Result<Option<PlaygroundAuthConfig>, String>,
 }
 
 impl PlaygroundRouterConfig {
@@ -35,6 +40,7 @@ impl PlaygroundRouterConfig {
         Self {
             playground_path: strip_leading_slash(&get_playground_http_path(env.as_ref()))
                 .to_string(),
+            auth: PlaygroundAuthConfig::from_env(env.as_ref()),
             env: env.clone(),
         }
     }
@@ -96,6 +102,36 @@ impl<'a> Router<RequestContext<'a>> for PlaygroundRouter {
 
         // remove the leading self.playground_path from the path
         let path = strip_leading(&path, playground_path);
+
+        // GitHub-OAuth gate (when configured): serve the auth routes, and
+        // require a valid session for everything else under the playground.
+        match &self.config.auth {
+            Err(message) => {
+                tracing::error!("Playground auth misconfigured: {message}");
+                return Some(ResponsePayload {
+                    body: ResponseBody::Bytes(
+                        "Playground authentication is misconfigured"
+                            .as_bytes()
+                            .to_vec(),
+                    ),
+                    headers: Headers::new(),
+                    status_code: StatusCode::INTERNAL_SERVER_ERROR,
+                });
+            }
+            Ok(Some(auth_config)) => {
+                let sub_path = strip_leading_slash(&path);
+                if sub_path.starts_with(auth::AUTH_ROUTE_PREFIX) {
+                    return Some(
+                        auth::route_auth(request_context, auth_config, playground_path, &sub_path)
+                            .await,
+                    );
+                }
+                if request_session(request_context.get_head(), auth_config).is_none() {
+                    return Some(auth::login_redirect(playground_path));
+                }
+            }
+            Ok(None) => {}
+        }
 
         let index_path = "index.html";
         let asset_path = if path.is_empty() {
