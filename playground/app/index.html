@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <base href="%%PLAYGROUND_HTTP_PATH%%/" />
+    <!-- target="_blank": links in schema/field doc descriptions (rendered from
+         markdown) should open in a new tab instead of navigating the playground
+         away; all internal playground navigation uses buttons, not anchors. -->
+    <base href="%%PLAYGROUND_HTTP_PATH%%/" target="_blank" />
 
     <link rel="icon" href="playground-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />

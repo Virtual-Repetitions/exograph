@@ -10,11 +10,14 @@ import { createPortal } from "react-dom";
 import { useHeadersEditorState } from "@graphiql/react";
 
 import { AuthConfigContext } from "../auth/secret/AuthConfigProvider";
-import { SecretAuthContext } from "../auth/secret/SecretAuthProvider";
 import { createJwtForProfile } from "../auth/secret/jwt-utils";
 
 const MODE_STORAGE_KEY = "exograph_playground_headers_mode_v1";
 const PROFILE_STORAGE_KEY = "exograph_playground_headers_profile_v1";
+
+// Generated profile tokens are minted with a 10-minute expiry (see jwt-utils);
+// re-mint well before that so an idle tab keeps working.
+const TOKEN_REFRESH_INTERVAL_MS = 4 * 60 * 1000;
 
 type Mode = "custom" | "profile";
 
@@ -38,15 +41,77 @@ interface HeaderProfileSelectorProps {
   cookieName?: string;
 }
 
+// The GraphiQL editor-tools section is a single element whose aria-label flips
+// between "Variables" and "Headers" with the active tab, so the profile FORM
+// can only be shown while the Headers tab is active. The header-application
+// logic must NOT live behind that condition — it has to run on load and on
+// profile changes even if the Headers tab is never opened. Hence this
+// component always mounts (and runs) HeaderProfileForm, which itself portals
+// its UI into the tool section only while the section shows Headers.
+export function HeaderProfileSelector({
+  headerName = "Authorization",
+  cookieName,
+}: HeaderProfileSelectorProps) {
+  return <HeaderProfileForm headerName={headerName} cookieName={cookieName} />;
+}
+
 interface HeaderProfileFormProps {
   headerName: string;
   cookieName?: string;
 }
 
+function useHeadersToolContainer(): HTMLElement | null {
+  const [container, setContainer] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const mountNode = document.createElement("div");
+    mountNode.className = "exo-header-profile-container";
+
+    const sync = () => {
+      const tool = document.querySelector<HTMLElement>(
+        '.graphiql-editor-tool[aria-label="Headers"]'
+      );
+      if (tool) {
+        if (mountNode.parentElement !== tool) {
+          tool.insertBefore(mountNode, tool.firstChild ?? null);
+        }
+        setContainer(mountNode);
+      } else {
+        mountNode.parentElement?.removeChild(mountNode);
+        setContainer(null);
+      }
+    };
+
+    sync();
+
+    // The tool section's aria-label flips between "Variables" and "Headers"
+    // as the user switches tabs, and the section itself appears only after
+    // GraphiQL finishes rendering — watch for both.
+    const observer = new MutationObserver(sync);
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["aria-label"],
+    });
+
+    return () => {
+      observer.disconnect();
+      mountNode.parentElement?.removeChild(mountNode);
+    };
+  }, []);
+
+  return container;
+}
+
 function HeaderProfileForm({ headerName, cookieName }: HeaderProfileFormProps) {
   const { config } = useContext(AuthConfigContext);
-  const { signedIn } = useContext(SecretAuthContext);
   const [headers, setHeaders] = useHeadersEditorState();
+  const container = useHeadersToolContainer();
 
   const [mode, setMode] = useState<Mode>(() => readModeFromStorage());
   const [selectedProfileId, setSelectedProfileId] = useState<string | undefined>(
@@ -95,6 +160,21 @@ function HeaderProfileForm({ headerName, cookieName }: HeaderProfileFormProps) {
     }
   }, [selectedProfileId]);
 
+  // The headers editor's Monaco model may not exist yet right after mount;
+  // report failure instead of throwing so the caller can retry (the setter's
+  // identity changes once the model appears, re-triggering the apply effect).
+  const trySetHeaders = useCallback(
+    (value: string) => {
+      try {
+        setHeaders(value);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [setHeaders]
+  );
+
   const applyProfileHeaders = useCallback(async () => {
     if (mode !== "profile" || !activeProfile) {
       return;
@@ -104,28 +184,7 @@ function HeaderProfileForm({ headerName, cookieName }: HeaderProfileFormProps) {
 
     const hasDocument = typeof document !== "undefined";
 
-    if (activeProfile.mode === "generated" && !signedIn) {
-      setStatus({
-        type: "error",
-        message: "Sign in to issue a JWT for generated profiles.",
-      });
-      const fallbackValue = Object.keys(activeProfile.headers ?? {}).length
-        ? JSON.stringify(activeProfile.headers, null, 2)
-        : "{}";
-      setHeaders(fallbackValue);
-      if (cookieName && hasDocument) {
-        document.cookie = `${cookieName}=`;
-      }
-      return;
-    }
-
     const { token, error } = await createJwtForProfile(activeProfile);
-
-    if (error) {
-      setStatus({ type: "error", message: error });
-    } else {
-      setStatus({ type: "idle" });
-    }
 
     const resolvedHeaders: Record<string, string> = { ...(activeProfile.headers ?? {}) };
 
@@ -149,14 +208,37 @@ function HeaderProfileForm({ headerName, cookieName }: HeaderProfileFormProps) {
       Object.keys(resolvedHeaders).length > 0
         ? JSON.stringify(resolvedHeaders, null, 2)
         : "{}";
-    setHeaders(nextValue);
-  }, [mode, activeProfile, headerName, cookieName, setHeaders, signedIn]);
+    const applied = trySetHeaders(nextValue);
+
+    if (error) {
+      setStatus({ type: "error", message: error });
+    } else if (!applied) {
+      setStatus({ type: "pending" });
+    } else {
+      setStatus({ type: "idle" });
+    }
+  }, [mode, activeProfile, headerName, cookieName, trySetHeaders]);
 
   useEffect(() => {
     if (mode === "profile") {
       void applyProfileHeaders();
     }
   }, [mode, applyProfileHeaders, activeProfile]);
+
+  // Generated tokens expire; keep them fresh while the tab is open and
+  // re-mint when the window regains focus (e.g. after the machine slept).
+  useEffect(() => {
+    if (mode !== "profile" || typeof window === "undefined") {
+      return;
+    }
+    const refresh = () => void applyProfileHeaders();
+    const intervalId = window.setInterval(refresh, TOKEN_REFRESH_INTERVAL_MS);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [mode, applyProfileHeaders]);
 
   const handleModeChange = useCallback(
     (nextMode: Mode) => {
@@ -169,21 +251,21 @@ function HeaderProfileForm({ headerName, cookieName }: HeaderProfileFormProps) {
         return;
       }
       setMode("custom");
-      setHeaders(customHeadersBackup.current || "{}");
+      trySetHeaders(customHeadersBackup.current || "{}");
       setStatus({ type: "idle" });
     },
-    [headers, mode, setHeaders]
+    [headers, mode, trySetHeaders]
   );
 
   const handleProfileChange = useCallback((profileId: string) => {
     setSelectedProfileId(profileId);
   }, []);
 
-  if (!profiles.length) {
+  if (!profiles.length || !container) {
     return null;
   }
 
-  return (
+  return createPortal(
     <div className="exo-header-profile-selector">
       <div
         className="exo-header-profile-modes"
@@ -236,72 +318,7 @@ function HeaderProfileForm({ headerName, cookieName }: HeaderProfileFormProps) {
           {status.message}
         </span>
       )}
-    </div>
-  );
-}
-
-export function HeaderProfileSelector({
-  headerName = "Authorization",
-  cookieName,
-}: HeaderProfileSelectorProps) {
-  const [container, setContainer] = useState<HTMLElement | null>(null);
-  const createdRef = useRef(false);
-
-  useEffect(() => {
-    if (typeof document === "undefined") {
-      return;
-    }
-
-    let disposed = false;
-    let mountNode: HTMLElement | null = null;
-
-    const ensureContainer = () => {
-      if (disposed) {
-        return;
-      }
-
-      const tool = document.querySelector<HTMLElement>(
-        '.graphiql-editor-tool[aria-label="Headers"]'
-      );
-
-      if (!tool) {
-        requestAnimationFrame(ensureContainer);
-        return;
-      }
-
-      const existing = tool.querySelector<HTMLElement>(
-        ":scope > .exo-header-profile-container"
-      );
-
-      if (existing) {
-        mountNode = existing;
-        createdRef.current = false;
-      } else {
-        mountNode = document.createElement("div");
-        mountNode.className = "exo-header-profile-container";
-        tool.insertBefore(mountNode, tool.firstChild ?? null);
-        createdRef.current = true;
-      }
-
-      setContainer(mountNode);
-    };
-
-    ensureContainer();
-
-    return () => {
-      disposed = true;
-      if (createdRef.current && mountNode?.parentElement) {
-        mountNode.parentElement.removeChild(mountNode);
-      }
-    };
-  }, []);
-
-  if (!container) {
-    return null;
-  }
-
-  return createPortal(
-    <HeaderProfileForm headerName={headerName} cookieName={cookieName} />,
+    </div>,
     container
   );
 }
