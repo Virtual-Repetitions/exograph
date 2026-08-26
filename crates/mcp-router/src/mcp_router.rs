@@ -12,8 +12,9 @@ use crate::{
 
 use common::{
     context::RequestContext,
-    env_const::get_mcp_http_path,
+    env_const::{EXO_WWW_AUTHENTICATE_HEADER, get_mcp_http_path},
     http::{Headers, RequestHead, ResponseBody, ResponsePayload},
+    mcp_auth::McpAuthConfig,
     router::Router,
 };
 use core_plugin_shared::profile::{SchemaProfile, SchemaProfiles};
@@ -42,6 +43,8 @@ const ERROR_METHOD_NOT_FOUND_MESSAGE: &str = "Method not found";
 pub struct McpRouter {
     api_path_prefix: String,
     tools: Vec<Box<dyn Tool>>,
+    auth: McpAuthConfig,
+    www_authenticate_header: Option<String>,
 }
 
 impl McpRouter {
@@ -52,10 +55,52 @@ impl McpRouter {
         ) -> Result<Arc<GraphQLSystemResolver>, SystemLoadingError>,
         schema_profiles: Option<SchemaProfiles>,
     ) -> Result<Self, SystemLoadingError> {
+        let auth = McpAuthConfig::from_env(env.as_ref()).map_err(SystemLoadingError::Config)?;
+
+        if !auth.is_enforced() {
+            tracing::warn!(
+                "The MCP endpoint is unauthenticated: anyone who can reach it can list tools \
+                 (which include the GraphQL schema) and run queries at the caller's access level. \
+                 Set {EXO_MCP_SECRET} to require a shared secret, or {EXO_ENABLE_MCP}=false to \
+                 disable the endpoint.",
+                EXO_MCP_SECRET = common::env_const::EXO_MCP_SECRET,
+                EXO_ENABLE_MCP = common::env_const::EXO_ENABLE_MCP,
+            );
+        }
+
         Ok(Self {
             api_path_prefix: get_mcp_http_path(env.as_ref()).clone(),
             tools: create_tools(env.as_ref(), schema_profiles, &create_resolver)?,
+            auth,
+            www_authenticate_header: env.get(EXO_WWW_AUTHENTICATE_HEADER),
         })
+    }
+
+    /// 401 for a request that failed the gate. The body is a JSON-RPC error so
+    /// MCP clients surface something meaningful rather than a transport error.
+    fn unauthorized_response(&self) -> ResponsePayload {
+        let mut headers = Headers::new();
+        headers.insert("content-type".into(), "application/json".into());
+        if let Some(www_authenticate_header) = &self.www_authenticate_header {
+            headers.insert("www-authenticate".into(), www_authenticate_header.clone());
+        }
+
+        ResponsePayload {
+            body: ResponseBody::Bytes(
+                json!({
+                    "jsonrpc": "2.0",
+                    "error": {
+                        "code": -32001,
+                        "message": "Unauthorized: the MCP endpoint requires a valid credential",
+                    },
+                    "id": null,
+                })
+                .to_string()
+                .into_bytes(),
+            ),
+            headers,
+            status_code: StatusCode::UNAUTHORIZED,
+        }
     }
 
     fn suitable(&self, request_head: &(dyn RequestHead + Sync)) -> bool {
@@ -247,6 +292,12 @@ impl<'a> Router<RequestContext<'a>> for McpRouter {
 
         if !self.suitable(head) {
             return None;
+        }
+
+        // Gate before any handling: `tools/list` alone discloses the schema.
+        if !self.auth.authorize(head) {
+            tracing::warn!("Rejected an unauthorized MCP request");
+            return Some(self.unauthorized_response());
         }
 
         let method = head.get_method();
