@@ -82,7 +82,12 @@ fn to_sql_array<T>(
         .into_iter()
         .map(|(_, v)| Dimension {
             len: *v,
-            lower_bound: 0,
+            // SQL arrays are 1-based, and Postgres stores whatever lower bound
+            // the binary array parameter declares rather than normalising it.
+            // Declaring 0 wrote columns that render as `[0:0]={x}`: `array_eq`
+            // compares bounds, so such a value is *not equal* to the ordinary
+            // `{x}` written by any other path, and its `[1]` subscript is NULL.
+            lower_bound: 1,
         })
         .collect::<Vec<_>>();
 
@@ -186,6 +191,48 @@ mod tests {
         array.iter().map(|e| format!("{:?}", e.param())).collect()
     }
 
+    /// Every array Exograph sends must declare the SQL-standard lower bound of
+    /// 1, at every nesting depth. A 0 here is not cosmetic: Postgres persists
+    /// the declared bound, `array_eq` compares bounds, and `arr[1]` becomes
+    /// NULL — so a written value stops comparing equal to the same array
+    /// written by any other path.
+    #[multiplatform_test]
+    fn lower_bound_is_one_at_every_depth() {
+        fn flat_entry(elem: &i32) -> ArrayEntry<'_, i32> {
+            ArrayEntry::Single(elem)
+        }
+        fn nested_entry(elem: &Element) -> ArrayEntry<'_, Element> {
+            match elem {
+                Element::List(elems) => ArrayEntry::List(elems),
+                _ => ArrayEntry::Single(elem),
+            }
+        }
+        fn nested_to_sql_param(elem: &Element) -> Result<OptionalSQLParam, DatabaseError> {
+            element_to_sql_param(elem, &Type::INT4)
+        }
+
+        let flat = to_sql_array(&[1, 2, 3], Type::INT4, flat_entry, &i32_to_sql_param).unwrap();
+
+        let nested_elems = vec![
+            Element::List(vec![Element::Single(1), Element::Single(2)]),
+            Element::List(vec![Element::Single(3), Element::Single(4)]),
+        ];
+        let nested = to_sql_array(
+            &nested_elems,
+            Type::INT4,
+            nested_entry,
+            &nested_to_sql_param,
+        )
+        .unwrap();
+
+        for dimension in flat.dimensions().iter().chain(nested.dimensions().iter()) {
+            assert_eq!(
+                dimension.lower_bound, 1,
+                "array parameters must use the SQL-standard 1-based lower bound"
+            );
+        }
+    }
+
     #[multiplatform_test]
     fn single_dimensional() {
         let elems = vec![1, 2, 3];
@@ -199,7 +246,7 @@ mod tests {
             array.dimensions(),
             [Dimension {
                 len: 3,
-                lower_bound: 0,
+                lower_bound: 1,
             }]
         );
         assert_eq!(
@@ -243,11 +290,11 @@ mod tests {
             [
                 Dimension {
                     len: 2,
-                    lower_bound: 0,
+                    lower_bound: 1,
                 },
                 Dimension {
                     len: 3,
-                    lower_bound: 0,
+                    lower_bound: 1,
                 }
             ]
         );
@@ -295,15 +342,15 @@ mod tests {
             [
                 Dimension {
                     len: 2,
-                    lower_bound: 0,
+                    lower_bound: 1,
                 },
                 Dimension {
                     len: 1,
-                    lower_bound: 0,
+                    lower_bound: 1,
                 },
                 Dimension {
                     len: 3,
-                    lower_bound: 0,
+                    lower_bound: 1,
                 }
             ]
         );
