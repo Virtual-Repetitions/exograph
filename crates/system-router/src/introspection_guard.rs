@@ -7,10 +7,19 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0.
 
-//! When the playground's GitHub-OAuth gate is configured, introspection must be
-//! held to the same session: a hosted playground needs introspection enabled,
-//! and gating only the playground HTML would leave the schema publicly
-//! fetchable via introspection queries against the GraphQL endpoint.
+//! When the introspection gate is configured (the playground's GitHub-OAuth
+//! gate and/or `EXO_INTROSPECTION_SECRET`), introspection queries must be held
+//! to it: a hosted playground needs introspection enabled, and gating only the
+//! playground HTML would leave the schema publicly fetchable via introspection
+//! queries against the GraphQL endpoint. Headless clients (codegen, schema
+//! diffing) present the shared secret instead of a browser session — see
+//! `common::introspection_auth` for the accept rules.
+//!
+//! Root-level `__typename` is exempt: it resolves through this subsystem too,
+//! but returns the literal, schema-independent string `"Query"` (or
+//! `"Mutation"`), discloses nothing the gate protects, and is the conventional
+//! GraphQL liveness ping — gating it turns monitors' `{ __typename }` probes
+//! into `Not authorized` failures that read as outages.
 
 use std::any::Any;
 use std::sync::Arc;
@@ -18,7 +27,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use common::context::RequestContext;
 use common::http::RequestPayload;
-use common::playground_auth::{PlaygroundAuthConfig, request_session};
+use common::introspection_auth::IntrospectionAuthConfig;
 use core_plugin_shared::interception::InterceptorIndex;
 use core_resolver::plugin::{SubsystemGraphQLResolver, SubsystemResolutionError};
 use core_resolver::system_resolver::GraphQLSystemResolver;
@@ -26,24 +35,24 @@ use core_resolver::{InterceptedOperation, QueryResponse, validation::field::Vali
 
 use async_graphql_parser::types::{FieldDefinition, OperationType, TypeDefinition};
 
-pub struct PlaygroundSessionGuardedResolver {
+pub struct IntrospectionGuardedResolver {
     inner: Arc<dyn SubsystemGraphQLResolver + Send + Sync>,
-    auth_config: PlaygroundAuthConfig,
+    auth_config: IntrospectionAuthConfig,
 }
 
-impl PlaygroundSessionGuardedResolver {
+impl IntrospectionGuardedResolver {
     pub fn new(
         inner: Arc<dyn SubsystemGraphQLResolver + Send + Sync>,
-        auth_config: PlaygroundAuthConfig,
+        auth_config: IntrospectionAuthConfig,
     ) -> Self {
         Self { inner, auth_config }
     }
 }
 
 #[async_trait]
-impl SubsystemGraphQLResolver for PlaygroundSessionGuardedResolver {
+impl SubsystemGraphQLResolver for IntrospectionGuardedResolver {
     fn id(&self) -> &'static str {
-        "introspection-playground-session-guarded"
+        "introspection-auth-guarded"
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -57,7 +66,9 @@ impl SubsystemGraphQLResolver for PlaygroundSessionGuardedResolver {
         request_context: &'a RequestContext,
         system_resolver: &'a GraphQLSystemResolver,
     ) -> Result<Option<QueryResponse>, SubsystemResolutionError> {
-        if request_session(request_context.get_head(), &self.auth_config).is_none() {
+        if operation.name.as_str() != "__typename"
+            && !self.auth_config.authorize(request_context.get_head())
+        {
             return Err(SubsystemResolutionError::Authorization);
         }
         self.inner
