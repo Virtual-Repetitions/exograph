@@ -7,60 +7,58 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0.
 
-//! Authentication for the MCP endpoint.
+//! Authentication for introspection queries.
 //!
-//! The MCP endpoint needs a gate of its own. Its tools expose the whole
-//! GraphQL schema — in the default `combined` tool mode a single unauthenticated
-//! `tools/list` returns the full SDL, because the schema is embedded in the
-//! `execute_query` tool's description — and `EXO_INTROSPECTION=false` does not
-//! disable it, since the MCP router builds its own introspection resolver so
-//! that MCP keeps working in production.
+//! The playground's GitHub-OAuth gate holds introspection to the same session
+//! as the playground HTML — a hosted playground needs introspection enabled,
+//! and gating only the HTML would leave the schema publicly fetchable. But a
+//! session cookie can only be obtained by a human completing the OAuth flow in
+//! a browser, which locks out headless introspection clients entirely:
+//! codegen (e.g. AutoGQL's schema download), schema diffing, and CI validation
+//! all see a blanket `Not authorized`.
 //!
-//! (Data itself is not exposed by this: `execute_query` resolves through the
-//! normal GraphQL pipeline, so `@access` rules apply against whatever JWT the
-//! request carries. The gate here protects the endpoint and the schema.)
+//! This gate mirrors the MCP endpoint's ([`crate::mcp_auth`]): a request is
+//! accepted when **either**:
 //!
-//! A request is accepted when **either**:
-//!
-//! - it carries the shared secret in `X-Exo-MCP-Secret` and `EXO_MCP_SECRET` is
-//!   set — intended for programmatic clients (`exo-mcp-bridge --header ...`,
-//!   Claude Desktop's HTTP transport config); or
+//! - it carries the shared secret in `X-Exo-Introspection-Secret` and
+//!   `EXO_INTROSPECTION_SECRET` is set — intended for programmatic clients; or
 //! - it carries a valid playground OAuth session cookie and that gate is
-//!   configured — so a human signed in through the playground can use its MCP
-//!   tab, whose requests are same-origin and send the cookie automatically.
+//!   configured — so the hosted playground keeps working for signed-in humans.
 //!
-//! The gate is enforced as soon as *either* mechanism is configured. That means
-//! turning on the playground's GitHub gate also closes MCP, rather than leaving
-//! it as a way around the very gate that was just enabled.
+//! The gate is enforced as soon as *either* mechanism is configured, so the
+//! secret can also gate introspection on a deployment that does not run the
+//! playground gate at all. With neither configured, introspection exposure is
+//! governed by `EXO_INTROSPECTION` alone, as before.
 //!
-//! A deliberately open deployment (neither configured) keeps the previous
-//! behavior of serving MCP to anyone who can reach it.
-//!
-//! The accept/reject rules live in [`crate::endpoint_gate`], shared with the
-//! introspection gate ([`crate::introspection_auth`]).
+//! (Data access is unchanged in every case: this guards `__schema`/`__type`,
+//! not data operations, which remain governed by the model's `@access` rules.)
 
 use exo_env::Environment;
 
 use crate::endpoint_gate::EndpointGate;
-use crate::env_const::EXO_MCP_SECRET;
+use crate::env_const::EXO_INTROSPECTION_SECRET;
 use crate::http::RequestHead;
 
-pub const MCP_SECRET_HEADER: &str = "X-Exo-MCP-Secret";
+pub const INTROSPECTION_SECRET_HEADER: &str = "X-Exo-Introspection-Secret";
 
-pub struct McpAuthConfig {
+pub struct IntrospectionAuthConfig {
     gate: EndpointGate,
 }
 
-impl McpAuthConfig {
+impl IntrospectionAuthConfig {
     /// `Err` on invalid configuration; callers must fail closed rather than
     /// fall back to serving openly.
     pub fn from_env(env: &dyn Environment) -> Result<Self, String> {
         Ok(Self {
-            gate: EndpointGate::from_env(env, EXO_MCP_SECRET, MCP_SECRET_HEADER)?,
+            gate: EndpointGate::from_env(
+                env,
+                EXO_INTROSPECTION_SECRET,
+                INTROSPECTION_SECRET_HEADER,
+            )?,
         })
     }
 
-    /// Whether any credential is required to reach the MCP endpoint.
+    /// Whether any credential is required to run introspection queries.
     pub fn is_enforced(&self) -> bool {
         self.gate.is_enforced()
     }
@@ -89,7 +87,7 @@ mod tests {
             HashMap::new(),
             HashMap::new(),
             http::Method::POST,
-            "/mcp".to_string(),
+            "/graphql".to_string(),
             serde_json::Value::Null,
             None,
         );
@@ -113,40 +111,60 @@ mod tests {
 
     #[test]
     fn open_when_nothing_configured() {
-        let config = McpAuthConfig::from_env(&MapEnvironment::from([])).unwrap();
+        let config = IntrospectionAuthConfig::from_env(&MapEnvironment::from([])).unwrap();
         assert!(!config.is_enforced());
         assert!(config.authorize(&head_with(vec![])));
     }
 
     #[test]
-    fn secret_required_when_configured() {
-        let config =
-            McpAuthConfig::from_env(&MapEnvironment::from([(EXO_MCP_SECRET, SECRET)])).unwrap();
+    fn secret_alone_gates_introspection() {
+        let config = IntrospectionAuthConfig::from_env(&MapEnvironment::from([(
+            EXO_INTROSPECTION_SECRET,
+            SECRET,
+        )]))
+        .unwrap();
         assert!(config.is_enforced());
 
         assert!(!config.authorize(&head_with(vec![])));
-        assert!(!config.authorize(&head_with(vec![(MCP_SECRET_HEADER, "wrong-secret-wrong")])));
-        assert!(config.authorize(&head_with(vec![(MCP_SECRET_HEADER, SECRET)])));
+        assert!(!config.authorize(&head_with(vec![(
+            INTROSPECTION_SECRET_HEADER,
+            "wrong-secret-wrong"
+        )])));
+        assert!(config.authorize(&head_with(vec![(INTROSPECTION_SECRET_HEADER, SECRET)])));
     }
 
     #[test]
     fn secret_header_is_case_insensitive() {
-        let config =
-            McpAuthConfig::from_env(&MapEnvironment::from([(EXO_MCP_SECRET, SECRET)])).unwrap();
-        assert!(config.authorize(&head_with(vec![("x-exo-mcp-secret", SECRET)])));
+        let config = IntrospectionAuthConfig::from_env(&MapEnvironment::from([(
+            EXO_INTROSPECTION_SECRET,
+            SECRET,
+        )]))
+        .unwrap();
+        assert!(config.authorize(&head_with(vec![("x-exo-introspection-secret", SECRET)])));
     }
 
     #[test]
     fn weak_or_empty_secret_is_rejected() {
-        assert!(McpAuthConfig::from_env(&MapEnvironment::from([(EXO_MCP_SECRET, "")])).is_err());
         assert!(
-            McpAuthConfig::from_env(&MapEnvironment::from([(EXO_MCP_SECRET, "short")])).is_err()
+            IntrospectionAuthConfig::from_env(&MapEnvironment::from([(
+                EXO_INTROSPECTION_SECRET,
+                ""
+            )]))
+            .is_err()
+        );
+        assert!(
+            IntrospectionAuthConfig::from_env(&MapEnvironment::from([(
+                EXO_INTROSPECTION_SECRET,
+                "short"
+            )]))
+            .is_err()
         );
     }
 
     #[test]
-    fn playground_gate_alone_closes_mcp() {
-        let config = McpAuthConfig::from_env(&MapEnvironment::from(playground_env())).unwrap();
+    fn playground_session_still_accepted() {
+        let config =
+            IntrospectionAuthConfig::from_env(&MapEnvironment::from(playground_env())).unwrap();
         assert!(config.is_enforced());
         assert!(!config.authorize(&head_with(vec![])));
 
@@ -158,22 +176,24 @@ mod tests {
     }
 
     #[test]
-    fn session_cookie_accepted_alongside_secret() {
+    fn secret_accepted_alongside_playground_gate() {
         let mut env = playground_env();
-        env.insert(EXO_MCP_SECRET.to_string(), SECRET.to_string());
-        let config = McpAuthConfig::from_env(&MapEnvironment::from(env)).unwrap();
+        env.insert(EXO_INTROSPECTION_SECRET.to_string(), SECRET.to_string());
+        let config = IntrospectionAuthConfig::from_env(&MapEnvironment::from(env)).unwrap();
+
+        assert!(config.authorize(&head_with(vec![(INTROSPECTION_SECRET_HEADER, SECRET)])));
 
         let session = issue_session_token("octocat", SECRET);
         assert!(config.authorize(&head_with(vec![(
             "cookie",
             &format!("{PLAYGROUND_SESSION_COOKIE}={session}"),
         )])));
-        assert!(config.authorize(&head_with(vec![(MCP_SECRET_HEADER, SECRET)])));
     }
 
     #[test]
     fn forged_session_rejected() {
-        let config = McpAuthConfig::from_env(&MapEnvironment::from(playground_env())).unwrap();
+        let config =
+            IntrospectionAuthConfig::from_env(&MapEnvironment::from(playground_env())).unwrap();
         let forged = issue_session_token("octocat", "another-secret-another-secret!!!");
         assert!(!config.authorize(&head_with(vec![(
             "cookie",
@@ -183,8 +203,8 @@ mod tests {
 
     #[test]
     fn misconfigured_playground_auth_propagates() {
-        // Client id without the rest must not silently leave MCP open.
+        // Client id without the rest must not silently leave introspection open.
         let env = MapEnvironment::from([(EXO_PLAYGROUND_AUTH_GITHUB_CLIENT_ID, "id")]);
-        assert!(McpAuthConfig::from_env(&env).is_err());
+        assert!(IntrospectionAuthConfig::from_env(&env).is_err());
     }
 }

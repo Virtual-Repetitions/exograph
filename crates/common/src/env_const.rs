@@ -72,6 +72,12 @@ pub const EXO_PLAYGROUND_AUTH_SESSION_SECRET: &str = "EXO_PLAYGROUND_AUTH_SESSIO
 // `X-Exo-MCP-Secret` header. See common::mcp_auth.
 pub const EXO_MCP_SECRET: &str = "EXO_MCP_SECRET";
 
+// Shared secret admitting headless clients (codegen, schema diffing) through
+// the introspection gate. Presented in the `X-Exo-Introspection-Secret`
+// header; setting it alone also gates introspection. See
+// common::introspection_auth.
+pub const EXO_INTROSPECTION_SECRET: &str = "EXO_INTROSPECTION_SECRET";
+
 #[derive(Debug)]
 pub enum DeploymentMode {
     Yolo,               // Corresponds to "exo yolo"
