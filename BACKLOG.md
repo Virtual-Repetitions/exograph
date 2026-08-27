@@ -194,9 +194,8 @@ so seeing changes requires `playground/lib` build → `playground/app` build →
 
 ## 6. Endpoint auth for the playground and MCP — shipped in v0.31.0 / v0.32.0
 
-**Status:** both gates shipped (PR #61 in v0.31.0, PR #63 in v0.32.0).
-**Not yet enabled on any deployment** — they are opt-in and nothing sets the
-variables, so staging and production remain open until someone does.
+**Status:** both gates shipped (PR #61 in v0.31.0, PR #63 in v0.32.0), and
+enabled on the staging deployment as of 2026-08-26.
 
 The playground (and, while the gate is configured, introspection queries) can
 be put behind GitHub OAuth via `EXO_PLAYGROUND_AUTH_GITHUB_CLIENT_ID` /
@@ -204,6 +203,14 @@ be put behind GitHub OAuth via `EXO_PLAYGROUND_AUTH_GITHUB_CLIENT_ID` /
 be gated with `EXO_MCP_SECRET` (presented in `X-Exo-MCP-Secret`), and a valid
 playground session is accepted in its place, so enabling the playground gate
 also closes MCP. Rationale and setup in the PR descriptions.
+
+Since v0.33.0, introspection has a shared-secret side door for headless
+clients: `EXO_INTROSPECTION_SECRET`, presented in `X-Exo-Introspection-Secret`.
+It mirrors the MCP gate (either the secret or a playground session is
+accepted; setting the secret alone also gates introspection) and exists
+because the session cookie can only be obtained by a human in a browser —
+turning the gate on had locked out AutoGQL's schema download in playbook-git
+with blanket `Not authorized` responses.
 
 **Remaining open items:**
 
@@ -268,7 +275,11 @@ links open in a new tab.
 
 ## 7. The playground gate closes `__typename`, breaking liveness probes
 
-**Status:** open — worked around in `jrnba_app` by changing the probe query
+**Status:** fixed in v0.33.0 — the guard now passes root-level `__typename`
+through to the inner resolver (the first suggested fix below). It returns a
+literal, schema-independent string and discloses nothing the gate protects.
+`jrnba_app`'s `/api/uptime` had already been worked around by changing the
+probe query; `{ __typename }` probes work again once v0.33.0 is deployed.
 **Found:** 2026-08-26, on the first staging deploy of v0.32.0
 
 Enabling `EXO_PLAYGROUND_AUTH_GITHUB_CLIENT_ID` wraps the introspection resolver
