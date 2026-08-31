@@ -160,6 +160,13 @@ pub struct ResolvedComputedField {
     pub subsystem: Option<String>,
     pub dependencies: Vec<String>,
     pub arguments: Vec<ResolvedComputedFieldArgument>,
+    /// Context type (e.g. "AuthContext") passed to the resolver as a fifth
+    /// argument, after the injected Exograph client. `None` keeps the
+    /// four-argument call shape.
+    // Plain Option (no skip_serializing_if): the exo_ir payload is bincode,
+    // which cannot round-trip skipped fields.
+    #[serde(default)]
+    pub inject_context: Option<String>,
 }
 
 /// A GraphQL argument declared on a `@computed` field (e.g. `scope: String`).

@@ -1553,6 +1553,11 @@ fn parse_computed_field(
         None => Some("deno".to_string()),
     };
 
+    let inject_context = match map.get("injectContext") {
+        Some(expr) => Some(extract_string_literal(expr, field, "injectContext", errors)?),
+        None => None,
+    };
+
     let dependencies = match map.get("select") {
         Some(AstExpr::StringList(list, _)) => list.clone(),
         Some(AstExpr::StringLiteral(value, _)) => value
@@ -1586,6 +1591,7 @@ fn parse_computed_field(
         subsystem,
         dependencies,
         arguments,
+        inject_context,
     })
 }
 
@@ -2663,6 +2669,52 @@ mod tests {
             let system = create_resolved_system_from_src($src);
             assert_eq!(system.is_err(), true, $error_string);
         };
+    }
+
+    #[test]
+    fn computed_field_inject_context() {
+        File::create("inject-ctx-probe.js").unwrap();
+
+        let resolved = create_resolved_system_from_src(
+            r#"
+        context AuthContext {
+          @jwt("sub") userId: String?
+        }
+
+        @postgres
+        module ProbeModule {
+          type Probe {
+            @pk id: Int = autoIncrement()
+            @computed(source = "inject-ctx-probe.js", export = "score", injectContext = "AuthContext")
+            score: Int?
+            @computed(source = "inject-ctx-probe.js", export = "plain")
+            plain: Int?
+          }
+        }
+        "#,
+        )
+        .unwrap();
+
+        let probe = resolved.get_by_key("Probe").unwrap();
+        let composite = match probe {
+            crate::resolved_type::ResolvedType::Composite(composite) => composite,
+            _ => panic!("Probe should resolve to a composite type"),
+        };
+
+        let inject = |name: &str| {
+            composite
+                .fields
+                .iter()
+                .find(|field| field.name == name)
+                .unwrap()
+                .computed
+                .as_ref()
+                .unwrap()
+                .inject_context
+                .clone()
+        };
+        assert_eq!(inject("score"), Some("AuthContext".to_string()));
+        assert_eq!(inject("plain"), None);
     }
 
     #[test]

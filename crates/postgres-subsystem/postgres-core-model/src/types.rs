@@ -194,6 +194,12 @@ pub struct ComputedField {
     pub dependencies: Vec<ComputedFieldDependency>,
     #[serde(default)]
     pub arguments: Vec<ComputedFieldArgument>,
+    /// Context type whose extracted value is appended as a fifth resolver
+    /// argument. `#[serde(default)]` keeps previously built exo_ir loadable.
+    // Plain Option (no skip_serializing_if): the exo_ir payload is bincode,
+    // which cannot round-trip skipped fields.
+    #[serde(default)]
+    pub inject_context: Option<String>,
 }
 
 /// A GraphQL argument declared on a `@computed` field. Rendered as an

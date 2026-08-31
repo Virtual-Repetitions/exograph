@@ -7,6 +7,7 @@ publish = false
 [features]
 
 [dependencies]
+tracing.workspace = true
 async-graphql-parser.workspace = true
 async-graphql-value.workspace = true
 async-recursion.workspace = true
