@@ -390,7 +390,16 @@ returned to the caller unchanged — only the Sentry error stream is narrowed.
 environment, which is the env flag this section asked for. Reconciling the name
 with the Deno path's `SENTRY_CAPTURE_ERROR_RESULTS` is still open.
 
-The operation-name tag below is **not** done.
+**Also done.** `capture_graphql_error` now tags `graphql.operation` and
+`client.user_agent`. Both are read from the request rather than the resolved
+document, so they survive a validation failure — the case that needed them most,
+since a query that fails validation never produces a document to read an operation
+name from. `route` takes the body and parses `OperationsPayload` itself instead of
+going through `resolve_in_memory`, because `take_body` yields `Null` on a second
+call and the name cannot be recovered after resolution. The now-unreachable
+`resolve_in_memory` wrapper is removed (it was never re-exported from `lib.rs`) and
+its `resolver::resolve_in_memory` span moves to `resolve_in_memory_for_payload`
+under the same name, so existing traces are unchanged.
 
 **Also.** `capture_graphql_error` tags `graphql.path`, `http.method`, `error.kind`
 and `request_id`, but not the **GraphQL operation name**. `graphql.path` is always

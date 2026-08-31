@@ -154,6 +154,7 @@ fn capture_graphql_error(
     err: &SystemResolutionError,
     request_context: &RequestContext<'_>,
     status_code: StatusCode,
+    operation_name: Option<&str>,
 ) {
     if sentry::Hub::current().client().is_none() {
         return;
@@ -181,6 +182,17 @@ fn capture_graphql_error(
                 scope.set_tag("request_id", request_id);
             }
             scope.set_tag("error.kind", format!("{:?}", err));
+            // `graphql.path` is always `/graphql`, so without these an issue
+            // cannot be attributed to an operation or a caller. Both come from
+            // the request rather than the resolved document, so they survive a
+            // validation failure — which is exactly the case that needed them.
+            scope.set_tag(
+                "graphql.operation",
+                operation_name.unwrap_or("<unnamed>").to_string(),
+            );
+            if let Some(user_agent) = request_head.get_header("user-agent") {
+                scope.set_tag("client.user_agent", user_agent);
+            }
             scope.set_tag(
                 "internal_request",
                 request_context.is_internal().to_string(),
@@ -247,8 +259,31 @@ impl<'a> Router<RequestContext<'a>> for GraphQLRouter {
             TrustedDocumentEnforcement::DoNotEnforce
         };
 
-        let response = resolve_in_memory(
-            request_context,
+        // Inlined from `resolve_in_memory` so the operation name is still in
+        // scope when an error is captured below. `take_body` yields Null on a
+        // second call, so it cannot be recovered afterwards — and a validation
+        // failure never produces a resolved document to read it from either.
+        let body = request_context.take_body();
+
+        let operations_payload = match OperationsPayload::from_json(body) {
+            Ok(payload) => payload,
+            Err(e) => {
+                let err =
+                    SystemResolutionError::RequestError(RequestError::InvalidBodyJson(e));
+                tracing::error!("Error while resolving request: {:?}", err);
+                capture_graphql_error(&err, request_context, StatusCode::BAD_REQUEST, None);
+                return Some(ResponsePayload {
+                    body: ResponseBody::None,
+                    headers: Headers::new(),
+                    status_code: StatusCode::BAD_REQUEST,
+                });
+            }
+        };
+
+        let operation_name = operations_payload.operation_name.clone();
+
+        let response = resolve_in_memory_for_payload(
+            operations_payload,
             &self.resolver,
             trusted_document_enforcement,
             request_context,
@@ -258,7 +293,12 @@ impl<'a> Router<RequestContext<'a>> for GraphQLRouter {
         match &response {
             Err(err @ SystemResolutionError::RequestError(e)) => {
                 tracing::error!("Error while resolving request: {:?}", e);
-                capture_graphql_error(err, request_context, StatusCode::BAD_REQUEST);
+                capture_graphql_error(
+                    err,
+                    request_context,
+                    StatusCode::BAD_REQUEST,
+                    operation_name.as_deref(),
+                );
                 return Some(ResponsePayload {
                     body: ResponseBody::None,
                     headers: Headers::new(),
@@ -266,7 +306,12 @@ impl<'a> Router<RequestContext<'a>> for GraphQLRouter {
                 });
             }
             Err(err) => {
-                capture_graphql_error(err, request_context, StatusCode::OK);
+                capture_graphql_error(
+                    err,
+                    request_context,
+                    StatusCode::OK,
+                    operation_name.as_deref(),
+                );
             }
             Ok(_) => {}
         }
@@ -359,30 +404,12 @@ impl<'a> Router<RequestContext<'a>> for GraphQLRouter {
     }
 }
 
+// Carries the span that `resolve_in_memory` used to provide before `route`
+// inlined it; the name is unchanged so existing traces still match.
 #[instrument(
     name = "resolver::resolve_in_memory"
-    skip(system_resolver, request, request_context)
+    skip(system_resolver, operations_payload, request_context)
 )]
-pub async fn resolve_in_memory<'a>(
-    request: &(dyn RequestPayload + Sync),
-    system_resolver: &GraphQLSystemResolver,
-    trusted_document_enforcement: TrustedDocumentEnforcement,
-    request_context: &RequestContext<'a>,
-) -> Result<Vec<(String, QueryResponse)>, SystemResolutionError> {
-    let body = request.take_body();
-
-    let operations_payload = OperationsPayload::from_json(body.clone())
-        .map_err(|e| SystemResolutionError::RequestError(RequestError::InvalidBodyJson(e)))?;
-
-    resolve_in_memory_for_payload(
-        operations_payload,
-        system_resolver,
-        trusted_document_enforcement,
-        request_context,
-    )
-    .await
-}
-
 pub async fn resolve_in_memory_for_payload(
     operations_payload: OperationsPayload,
     system_resolver: &GraphQLSystemResolver,
