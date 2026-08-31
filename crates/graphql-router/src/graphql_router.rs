@@ -21,6 +21,7 @@ use core_plugin_shared::trusted_documents::TrustedDocuments;
 use core_resolver::QueryResponse;
 use core_resolver::introspection::definition::schema::Schema;
 use core_resolver::plugin::SubsystemGraphQLResolver;
+use core_resolver::plugin::subsystem_graphql_resolver::SubsystemResolutionError;
 use core_router::SystemLoadingError;
 use http::StatusCode;
 use sentry::Level;
@@ -93,12 +94,79 @@ impl GraphQLRouter {
     }
 }
 
+/// Whether this error is an ordinary, expected outcome rather than a fault the
+/// server did not intend.
+///
+/// The distinction matters because every one of these used to be filed as a
+/// production Sentry error at `Level::Error`. A client that sends a query the
+/// published schema does not accept, or asks for something it is not allowed to
+/// see, has not caused a server fault — the engine behaved exactly as designed
+/// and told it so. Reporting those as errors buries genuine faults: the loudest
+/// issues in the project were access denials and stale-client validation
+/// failures, while real `Internal server error` events sat underneath them.
+///
+/// Every arm here is a message the engine deliberately renders for the caller.
+/// Anything not listed is treated as a fault and still captured, so a new error
+/// variant is reported by default rather than silently dropped.
+fn is_expected_user_error(err: &SystemResolutionError) -> bool {
+    match err {
+        // The query does not match the published schema — a stale or hand-written
+        // client. Nothing executed.
+        SystemResolutionError::Validation(_) => true,
+        // Malformed request: unparseable body, wrong content type, and similar.
+        SystemResolutionError::RequestError(_) => true,
+        // The document is not in the trusted-document allowlist. That is the
+        // allowlist working.
+        SystemResolutionError::TrustedDocumentResolution(_) => true,
+        SystemResolutionError::SubsystemResolutionError(subsystem_err) => match subsystem_err {
+            // Access rules denying a request is the access control working.
+            SubsystemResolutionError::Authorization => true,
+            // The caller selected a field that does not exist on the type.
+            SubsystemResolutionError::InvalidField(_, _) => true,
+            // A business rule a subsystem chose to surface (`ExographError`) —
+            // "Invalid or expired code", "Gear already owned", and the like.
+            SubsystemResolutionError::UserDisplayError(_) => true,
+            // Context extraction failing can mean a malformed token, but it also
+            // catches real misconfiguration (a null `@query` context field
+            // silently denying every request), so keep reporting it.
+            SubsystemResolutionError::ContextExtraction(_) => false,
+            // Documented in the variant itself as almost certainly a programming
+            // error.
+            SubsystemResolutionError::NoInterceptorFound => false,
+        },
+        _ => false,
+    }
+}
+
+/// Escape hatch: set `EXO_SENTRY_CAPTURE_EXPECTED_ERRORS=true` to restore the
+/// previous behaviour of capturing everything. Useful when investigating an
+/// environment where an expected-looking error is in fact the symptom.
+fn capture_expected_errors() -> bool {
+    std::env::var("EXO_SENTRY_CAPTURE_EXPECTED_ERRORS")
+        .map(|value| {
+            let value = value.trim().to_ascii_lowercase();
+            value == "true" || value == "1" || value == "yes"
+        })
+        .unwrap_or(false)
+}
+
 fn capture_graphql_error(
     err: &SystemResolutionError,
     request_context: &RequestContext<'_>,
     status_code: StatusCode,
 ) {
     if sentry::Hub::current().client().is_none() {
+        return;
+    }
+
+    // Expected outcomes are still logged below, and still returned to the
+    // caller unchanged — they are only kept out of the Sentry error stream.
+    if is_expected_user_error(err) && !capture_expected_errors() {
+        tracing::debug!(
+            error.kind = %format!("{:?}", err),
+            internal_request = request_context.is_internal(),
+            "Expected GraphQL error, not captured to Sentry"
+        );
         return;
     }
 
@@ -336,4 +404,76 @@ pub async fn resolve_in_memory_for_payload(
             SystemResolutionError::Generic(format!("Error while finalizing transaction: {e}"))
         })
         .and(response)
+}
+
+#[cfg(test)]
+mod expected_error_tests {
+    use super::*;
+    use async_graphql_parser::Pos;
+    use core_resolver::validation::validation_error::ValidationError;
+
+    fn pos() -> Pos {
+        Pos { line: 1, column: 1 }
+    }
+
+    /// The families that made up almost all of the Sentry error volume: a stale
+    /// or hand-written client selecting a field the schema does not have, and
+    /// the access rules doing their job.
+    #[test]
+    fn client_mistakes_and_denials_are_expected() {
+        let cases: Vec<SystemResolutionError> = vec![
+            ValidationError::InvalidField("uuid".to_string(), "Tag".to_string(), pos()).into(),
+            ValidationError::VariableNotFound("organizationUuid".to_string(), pos()).into(),
+            SubsystemResolutionError::Authorization.into(),
+            SubsystemResolutionError::InvalidField("locale".to_string(), "User").into(),
+            SubsystemResolutionError::UserDisplayError("Invalid or expired code".to_string())
+                .into(),
+        ];
+
+        for err in cases {
+            assert!(
+                is_expected_user_error(&err),
+                "expected {err:?} to be treated as an ordinary outcome"
+            );
+        }
+    }
+
+    /// Anything that represents a fault the server did not intend must keep
+    /// reaching Sentry — that is the signal the noise was burying.
+    #[test]
+    fn server_faults_are_still_captured() {
+        let cases: Vec<SystemResolutionError> = vec![
+            SystemResolutionError::NoResolverFound,
+            SystemResolutionError::Generic("boom".to_string()),
+            SystemResolutionError::AroundInterceptorReturnedNoResponse,
+            SystemResolutionError::NoInterceptionTree,
+            SubsystemResolutionError::NoInterceptorFound.into(),
+        ];
+
+        for err in cases {
+            assert!(
+                !is_expected_user_error(&err),
+                "expected {err:?} to still be captured"
+            );
+        }
+    }
+
+    /// The escape hatch has to be off unless explicitly turned on, and must not
+    /// be tripped by an unrelated value.
+    #[test]
+    fn capture_expected_errors_defaults_to_off() {
+        // SAFETY: single-threaded test, restoring the variable before returning.
+        unsafe {
+            std::env::remove_var("EXO_SENTRY_CAPTURE_EXPECTED_ERRORS");
+            assert!(!capture_expected_errors());
+
+            std::env::set_var("EXO_SENTRY_CAPTURE_EXPECTED_ERRORS", "true");
+            assert!(capture_expected_errors());
+
+            std::env::set_var("EXO_SENTRY_CAPTURE_EXPECTED_ERRORS", "false");
+            assert!(!capture_expected_errors());
+
+            std::env::remove_var("EXO_SENTRY_CAPTURE_EXPECTED_ERRORS");
+        }
+    }
 }
