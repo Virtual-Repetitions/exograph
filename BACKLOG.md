@@ -323,3 +323,64 @@ a whole.
 **Workaround in use.** `jrnba_app`'s uptime check now calls `healthCheckE2E`
 (a real resolver, authenticated by a `secret` argument rather than a JWT, with
 external dependencies switched off) instead of pinging `__typename`.
+
+---
+
+## 8. Every user-facing GraphQL error is reported to Sentry as an error
+
+**Status:** open — worked around in `vreps-exo` by narrowing where the DSN is set
+**Found:** 2026-08-28, auditing "new errors since the recent deploys" in vreps-exo
+
+`capture_graphql_error` in `crates/graphql-router/src/graphql_router.rs` is called
+for every `SystemResolutionError` and always reports at `Level::Error`:
+
+```rust
+Err(err @ SystemResolutionError::RequestError(e)) => {
+    tracing::error!("Error while resolving request: {:?}", e);
+    capture_graphql_error(err, request_context, StatusCode::BAD_REQUEST);
+}
+Err(err) => {
+    capture_graphql_error(err, request_context, StatusCode::OK);
+}
+```
+
+Nothing distinguishes an internal fault from an ordinary, expected outcome, so
+access denials, validation errors from stale clients, and declared business-rule
+results are all filed as production errors.
+
+**Why it matters.** In `vreps-exo` the loudest issues in the tracker are almost
+entirely the system working correctly:
+
+| Sentry issue | Lifetime events | What it is |
+| ------------ | --------------- | ---------- |
+| `Not authorized` | 16,890 | access rules denying, as written |
+| `Field 'country_code_lock' is not valid for type 'PublicPlaybook'` | 477 | a stale client selecting a dropped column |
+| `Invalid or expired code` | 829 | a user mistyping an invite code |
+| `Invite is not pending` | 89 | an already-accepted invite |
+| `Gear already owned` | 76 | a store rule refusing a duplicate purchase |
+
+Genuine faults — an `Internal server error` group running ~66 events/day — sit
+underneath that and do not stand out. The noise also sets the baseline, so a real
+regression does not visibly move the numbers. Every negative-control test ("does a
+non-owner get denied?") files a fresh production-looking issue.
+
+**Wanted.** Classify before capturing. Denials, validation failures against a
+published schema, and declared `ExographError` business results are expected: log
+and count them, but do not file them as Sentry errors. Reserve error-level capture
+for the variants that represent a fault the server did not intend.
+
+Failing a full classification, an env flag to select which classes are captured
+would let each environment narrow it. Note `SENTRY_CAPTURE_ERROR_RESULTS` already
+exists in `vreps-exo` for the *Deno* resolver path and does **not** control this
+engine path despite the shared name — worth reconciling.
+
+**Also.** `capture_graphql_error` tags `graphql.path`, `http.method`, `error.kind`
+and `request_id`, but not the **GraphQL operation name**. `graphql.path` is always
+`/graphql`, so the two loudest production issues cannot be attributed to an
+operation or a caller without guessing. Adding the operation name — and a client or
+user-agent tag — would make them diagnosable.
+
+**Workaround in use.** `vreps-exo` blanks `SENTRY_DSN` in its local env overlay
+(vreps-exo#311/#315) so local development stops reporting into the shared project.
+That removes the local noise; the expected-outcome noise from staging and
+production remains, tracked in vreps-exo#312.
