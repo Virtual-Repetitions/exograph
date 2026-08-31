@@ -3,7 +3,8 @@ use common::context::RequestContext;
 use core_model::types::{BaseOperationReturnType, FieldType, OperationReturnType};
 use core_resolver::{
     QueryResponse, QueryResponseBody, access_solver::AccessSolver,
-    system_resolver::GraphQLSystemResolver, validation::field::ValidatedField,
+    context_extractor::ContextExtractor, system_resolver::GraphQLSystemResolver,
+    validation::field::ValidatedField,
 };
 use deno_graphql_resolver::{
     DenoSubsystemResolver, ExoCallbackProcessor, InterceptedOperationInfo,
@@ -346,12 +347,62 @@ async fn execute_computed_field(
 
     // Pass four arguments: parent, args, selection, exograph
     // The 4th argument (Exograph) is required for computed resolvers
-    let arg_sequence = vec![
+    let mut arg_sequence = vec![
         Arg::Serde(parent_snapshot.clone()),
         Arg::Serde(args_value),
         Arg::Serde(selection_value),
         Arg::Shim("Exograph".to_string()), // Injected Exograph client
     ];
+
+    // When the field declares `injectContext = "SomeContext"`, extract that
+    // context from the request and append it as a fifth argument. Resolvers
+    // written for the four-argument shape simply never read it.
+    if let Some(context_name) = &computed.inject_context {
+        let core_subsystem = &subsystem_resolver.subsystem.core_subsystem;
+        // Validated at build time; guard again so a stale exo_ir cannot reach
+        // the panicking unwrap inside the blanket ContextExtractor impl.
+        // Extraction failures degrade to a null injection rather than failing
+        // the query: the injected context is an optimization for the resolver,
+        // which must keep working (e.g. by re-entering GraphQL) when it is
+        // absent — including for requests that carry no usable auth at all.
+        let context_value = if core_subsystem.contexts.get_by_key(context_name).is_some() {
+            match core_subsystem
+                .extract_context(request_context, context_name)
+                .await
+            {
+                Ok(value) => value,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to extract context '{}' for computed field '{}': {e}",
+                        context_name,
+                        selection_field.name
+                    );
+                    None
+                }
+            }
+        } else {
+            tracing::warn!(
+                "Computed field '{}' injectContext references unknown context type '{}'",
+                selection_field.name,
+                context_name
+            );
+            None
+        };
+
+        let context_json: Value = match context_value.map(TryInto::try_into) {
+            Some(Ok(value)) => value,
+            Some(Err(_)) => {
+                tracing::warn!(
+                    "Failed to serialize context '{}' for computed field '{}'",
+                    context_name,
+                    selection_field.name
+                );
+                Value::Null
+            }
+            None => Value::Null,
+        };
+        arg_sequence.push(Arg::Serde(context_json));
+    }
 
     deno_resolver
         .executor

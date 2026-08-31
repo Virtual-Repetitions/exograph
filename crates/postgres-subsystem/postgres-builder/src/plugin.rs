@@ -125,6 +125,10 @@ impl SubsystemBuilder for PostgresSubsystemBuilder {
                             name: "select",
                             optional: true,
                         },
+                        MappedAnnotationParamSpec {
+                            name: "injectContext",
+                            optional: true,
+                        },
                     ]),
                 },
             ),

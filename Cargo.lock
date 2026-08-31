@@ -8131,6 +8131,7 @@ dependencies = [
  "postgres-graphql-model",
  "serde_json",
  "tokio",
+ "tracing",
  "typed-generational-arena",
  "wasm-bindgen-test",
 ]

@@ -709,6 +709,19 @@ fn create_persistent_field(
             });
         }
 
+        let inject_context = match &computed.inject_context {
+            Some(context_name) => {
+                if env.contexts.get_by_key(context_name).is_none() {
+                    return Err(ModelBuildingError::Generic(format!(
+                        "Computed field '{}' injectContext references unknown context type '{}'",
+                        field.name, context_name
+                    )));
+                }
+                Some(context_name.clone())
+            }
+            None => None,
+        };
+
         return Ok(PostgresField {
             name: field.name.to_owned(),
             typ: field.typ.wrap(base_field_type),
@@ -727,6 +740,7 @@ fn create_persistent_field(
                         is_list: arg.is_list,
                     })
                     .collect(),
+                inject_context,
             }),
             access: placeholder_access,
             default_value: None,
