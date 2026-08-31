@@ -328,7 +328,8 @@ external dependencies switched off) instead of pinging `__typename`.
 
 ## 8. Every user-facing GraphQL error is reported to Sentry as an error
 
-**Status:** open — worked around in `vreps-exo` by narrowing where the DSN is set
+**Status:** classification implemented on `fix/sentry-classify-expected-errors`;
+unshipped until an engine release picks it up
 **Found:** 2026-08-28, auditing "new errors since the recent deploys" in vreps-exo
 
 `capture_graphql_error` in `crates/graphql-router/src/graphql_router.rs` is called
@@ -373,6 +374,32 @@ Failing a full classification, an env flag to select which classes are captured
 would let each environment narrow it. Note `SENTRY_CAPTURE_ERROR_RESULTS` already
 exists in `vreps-exo` for the *Deno* resolver path and does **not** control this
 engine path despite the shared name — worth reconciling.
+
+**Done.** `is_expected_user_error` in `crates/graphql-router/src/graphql_router.rs`
+classifies before capturing. Expected: `Validation`, `RequestError`,
+`TrustedDocumentResolution`, and the `Authorization`, `InvalidField` and
+`UserDisplayError` subsystem variants. Still captured: everything else, including
+`ContextExtraction` (a null `@query` context field denying every request is a real
+misconfiguration — see §3) and `NoInterceptorFound` (documented in the variant as
+almost certainly a programming error). The match is exhaustive over the subsystem
+variants and falls through to *captured*, so a new variant is reported by default
+rather than silently dropped. Expected errors are still logged at `debug` and are
+returned to the caller unchanged — only the Sentry error stream is narrowed.
+
+`EXO_SENTRY_CAPTURE_EXPECTED_ERRORS=true` restores the previous behaviour per
+environment, which is the env flag this section asked for. Reconciling the name
+with the Deno path's `SENTRY_CAPTURE_ERROR_RESULTS` is still open.
+
+**Also done.** `capture_graphql_error` now tags `graphql.operation` and
+`client.user_agent`. Both are read from the request rather than the resolved
+document, so they survive a validation failure — the case that needed them most,
+since a query that fails validation never produces a document to read an operation
+name from. `route` takes the body and parses `OperationsPayload` itself instead of
+going through `resolve_in_memory`, because `take_body` yields `Null` on a second
+call and the name cannot be recovered after resolution. The now-unreachable
+`resolve_in_memory` wrapper is removed (it was never re-exported from `lib.rs`) and
+its `resolver::resolve_in_memory` span moves to `resolve_in_memory_for_payload`
+under the same name, so existing traces are unchanged.
 
 **Also.** `capture_graphql_error` tags `graphql.path`, `http.method`, `error.kind`
 and `request_id`, but not the **GraphQL operation name**. `graphql.path` is always
