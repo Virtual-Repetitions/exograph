@@ -1554,7 +1554,12 @@ fn parse_computed_field(
     };
 
     let inject_context = match map.get("injectContext") {
-        Some(expr) => Some(extract_string_literal(expr, field, "injectContext", errors)?),
+        Some(expr) => Some(extract_string_literal(
+            expr,
+            field,
+            "injectContext",
+            errors,
+        )?),
         None => None,
     };
 
