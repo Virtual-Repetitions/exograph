@@ -9,6 +9,7 @@ pub struct StaticKeyValidator {
     name: String,
     kid: Option<String>,
     decoding_key: DecodingKey,
+    algorithm: Algorithm,
     allowed_audiences: Option<Vec<String>>,
 }
 
@@ -21,26 +22,40 @@ impl StaticKeyValidator {
     ) -> Result<Self, JwtConfigurationError> {
         let name = name.into();
         let normalized_pem = pem.replace("\\n", "\n");
-        let decoding_key = DecodingKey::from_rsa_pem(normalized_pem.as_bytes()).map_err(|err| {
-            JwtConfigurationError::Configuration {
-                message: format!("Invalid RSA public key in '{}'", name),
-                source: Box::new(err),
-            }
-        })?;
+        // Accept either an RSA (RS256) or an Ed25519 (EdDSA) public key.
+        let (decoding_key, algorithm) = match DecodingKey::from_rsa_pem(normalized_pem.as_bytes()) {
+            Ok(key) => (key, Algorithm::RS256),
+            Err(rsa_err) => match DecodingKey::from_ed_pem(normalized_pem.as_bytes()) {
+                Ok(key) => (key, Algorithm::EdDSA),
+                Err(ed_err) => {
+                    return Err(JwtConfigurationError::Configuration {
+                        message: format!(
+                            "Invalid public key in '{}': not RSA ({}) nor Ed25519 ({})",
+                            name, rsa_err, ed_err
+                        ),
+                        source: Box::new(rsa_err),
+                    });
+                }
+            },
+        };
 
         if let Some(kid) = &kid {
             info!(
-                "Configured static JWT public key '{}' with kid '{}'",
-                name, kid
+                "Configured static JWT public key '{}' ({:?}) with kid '{}'",
+                name, algorithm, kid
             );
         } else {
-            info!("Configured static JWT public key '{}'", name);
+            info!(
+                "Configured static JWT public key '{}' ({:?})",
+                name, algorithm
+            );
         }
 
         Ok(Self {
             name,
             kid,
             decoding_key,
+            algorithm,
             allowed_audiences,
         })
     }
@@ -67,7 +82,7 @@ impl StaticKeyValidator {
             }
         }
 
-        let mut validation = Validation::new(Algorithm::RS256);
+        let mut validation = Validation::new(self.algorithm);
         validation.validate_exp = true;
         validation.validate_nbf = false;
 

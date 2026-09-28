@@ -1,16 +1,28 @@
+use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
+
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
-use tracing::{error, warn};
+use tokio::sync::{Mutex, RwLock};
+use tracing::{error, info, warn};
 
 use super::authenticator::{JwtConfigurationError, jwt_debug_enabled, jwt_debug_log};
+
+/// Do not re-fetch the JWKS more often than this when tokens arrive with
+/// unknown kids. The first unknown kid after startup always triggers a fetch;
+/// this interval only throttles subsequent attempts, so a burst of garbage
+/// kids cannot turn the validator into a JWKS-fetching loop.
+const MIN_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Jwks {
     keys: Vec<JwkKey>,
 }
 
+/// A single JWK. All key-material fields are optional so that one unsupported
+/// or exotic key in the set does not fail deserialization of the whole JWKS;
+/// unusable keys are skipped with a warning instead.
 #[derive(Debug, Serialize, Deserialize)]
 struct JwkKey {
     #[serde(rename = "kty")]
@@ -19,16 +31,56 @@ struct JwkKey {
     key_use: Option<String>,
     kid: Option<String>,
     alg: Option<String>,
-    n: String,
-    e: String,
+    // RSA components
+    n: Option<String>,
+    e: Option<String>,
+    // OKP (EdDSA) components
+    crv: Option<String>,
+    x: Option<String>,
+}
+
+impl JwkKey {
+    /// Build a decoding key and the algorithm to validate with. Returns a
+    /// human-readable reason when the key cannot be used.
+    fn to_decoding_key(&self) -> Result<(DecodingKey, Algorithm), String> {
+        match self.key_type.as_str() {
+            "RSA" => {
+                let n = self.n.as_deref().ok_or("RSA key is missing 'n'")?;
+                let e = self.e.as_deref().ok_or("RSA key is missing 'e'")?;
+                let algorithm = match self.alg.as_deref() {
+                    None | Some("RS256") => Algorithm::RS256,
+                    Some("RS384") => Algorithm::RS384,
+                    Some("RS512") => Algorithm::RS512,
+                    Some(other) => return Err(format!("unsupported RSA algorithm '{other}'")),
+                };
+                DecodingKey::from_rsa_components(n, e)
+                    .map(|key| (key, algorithm))
+                    .map_err(|e| format!("invalid RSA components: {e}"))
+            }
+            "OKP" => match self.crv.as_deref() {
+                Some("Ed25519") => {
+                    let x = self.x.as_deref().ok_or("OKP key is missing 'x'")?;
+                    DecodingKey::from_ed_components(x)
+                        .map(|key| (key, Algorithm::EdDSA))
+                        .map_err(|e| format!("invalid Ed25519 component: {e}"))
+                }
+                other => Err(format!("unsupported OKP curve {other:?}")),
+            },
+            other => Err(format!("unsupported key type '{other}'")),
+        }
+    }
 }
 
 pub struct JwksValidator {
     jwks_url: String,
-    keys: HashMap<String, DecodingKey>,
+    keys: RwLock<HashMap<String, (DecodingKey, Algorithm)>>,
     client: reqwest::Client,
     allowed_audiences: Option<Vec<String>>,
     allowed_issuers: Option<Vec<String>>,
+    /// When the JWKS was last fetched because of an unknown kid. `None` until
+    /// the first such fetch, so a rotation right after startup is picked up
+    /// immediately.
+    last_miss_refresh: Mutex<Option<Instant>>,
 }
 
 impl JwksValidator {
@@ -66,19 +118,22 @@ impl JwksValidator {
             normalized
         });
 
-        let mut validator = Self {
+        let validator = Self {
             jwks_url: jwks_url.clone(),
-            keys: HashMap::new(),
+            keys: RwLock::new(HashMap::new()),
             client: client.clone(),
             allowed_audiences,
             allowed_issuers: normalized_issuers,
+            last_miss_refresh: Mutex::new(None),
         };
 
-        // Fetch initial keys
-        validator.refresh_keys().await?;
+        // Fetch initial keys; startup fails if the JWKS is unreachable or
+        // holds no usable key, as before.
+        let initial_keys = validator.fetch_keys().await?;
+        *validator.keys.write().await = initial_keys;
 
         jwt_debug_log(|| {
-            let kids: Vec<String> = validator.keys.keys().cloned().collect();
+            let kids = validator.debug_known_kids();
             format!(
                 "Initialized JWKS provider '{}' with {} key(s); kids={:?}; audience_filter={:?}; issuer_filter={:?}",
                 jwks_url,
@@ -92,7 +147,9 @@ impl JwksValidator {
         Ok(validator)
     }
 
-    async fn refresh_keys(&mut self) -> Result<(), JwtConfigurationError> {
+    async fn fetch_keys(
+        &self,
+    ) -> Result<HashMap<String, (DecodingKey, Algorithm)>, JwtConfigurationError> {
         let response = self.client.get(&self.jwks_url).send().await.map_err(|e| {
             JwtConfigurationError::Configuration {
                 message: format!("Failed to fetch JWKS from {}", self.jwks_url),
@@ -111,26 +168,24 @@ impl JwksValidator {
 
         let mut new_keys = HashMap::new();
         for key in jwks.keys {
-            if key.key_type != "RSA" {
-                warn!("Skipping non-RSA key: {:?}", key.kid);
-                continue;
-            }
+            let kid = key.kid.clone().unwrap_or_else(|| "default".to_string());
 
-            let kid = key.kid.unwrap_or_else(|| "default".to_string());
-
-            match DecodingKey::from_rsa_components(&key.n, &key.e) {
+            match key.to_decoding_key() {
                 Ok(decoding_key) => {
-                    new_keys.insert(kid.clone(), decoding_key);
+                    new_keys.insert(kid, decoding_key);
                 }
-                Err(e) => {
-                    error!("Failed to create decoding key for kid {}: {}", kid, e);
+                Err(reason) => {
+                    warn!("Skipping unusable JWKS key '{}': {}", kid, reason);
                 }
             }
         }
 
         if new_keys.is_empty() {
             return Err(JwtConfigurationError::Configuration {
-                message: format!("No valid RSA keys found in JWKS from {}", self.jwks_url),
+                message: format!(
+                    "No usable signing keys (RSA or Ed25519) found in JWKS from {}",
+                    self.jwks_url
+                ),
                 source: Box::new(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     "No valid keys",
@@ -138,8 +193,55 @@ impl JwksValidator {
             });
         }
 
-        self.keys = new_keys;
-        Ok(())
+        Ok(new_keys)
+    }
+
+    async fn lookup_key(&self, kid: &str) -> Option<(DecodingKey, Algorithm)> {
+        self.keys
+            .read()
+            .await
+            .get(kid)
+            .map(|(key, algorithm)| (key.clone(), *algorithm))
+    }
+
+    /// Called when a token carries a kid we do not know: re-fetch the JWKS so
+    /// a provider-side key rotation does not require a process restart. The
+    /// fetch is single-flight (concurrent misses wait on the mutex, then see
+    /// the refreshed map) and throttled to one attempt per
+    /// `MIN_REFRESH_INTERVAL`. A failed or empty fetch keeps the current keys.
+    async fn refresh_after_miss(&self, missing_kid: &str) {
+        let mut last_refresh = self.last_miss_refresh.lock().await;
+
+        if let Some(last) = *last_refresh
+            && last.elapsed() < MIN_REFRESH_INTERVAL
+        {
+            return;
+        }
+        *last_refresh = Some(Instant::now());
+
+        info!(
+            "JWKS '{}' has no key for kid '{}'; re-fetching keys",
+            self.jwks_url, missing_kid
+        );
+
+        match self.fetch_keys().await {
+            Ok(new_keys) => {
+                let kid_count = new_keys.len();
+                let kids: Vec<String> = new_keys.keys().cloned().collect();
+                *self.keys.write().await = new_keys;
+                info!(
+                    "JWKS '{}' re-fetched: {} key(s), kids={:?}",
+                    self.jwks_url, kid_count, kids
+                );
+            }
+            Err(e) => {
+                // Keep serving the keys we already have.
+                error!(
+                    "JWKS '{}' re-fetch after unknown kid '{}' failed: {}",
+                    self.jwks_url, missing_kid, e
+                );
+            }
+        }
     }
 
     pub async fn validate(&self, token: &str) -> Result<Value, JwtValidationError> {
@@ -151,11 +253,18 @@ impl JwksValidator {
 
         let kid = header.kid.unwrap_or_else(|| "default".to_string());
 
-        // Get the decoding key for this kid
-        let decoding_key = self.keys.get(&kid).ok_or_else(|| {
+        // Get the decoding key for this kid, re-fetching the JWKS once if the
+        // kid is unknown (the provider may have rotated its keys).
+        let mut key_entry = self.lookup_key(&kid).await;
+        if key_entry.is_none() {
+            self.refresh_after_miss(&kid).await;
+            key_entry = self.lookup_key(&kid).await;
+        }
+
+        let (decoding_key, algorithm) = key_entry.ok_or_else(|| {
             error!("No key found for kid: {}", kid);
             if jwt_debug_enabled() {
-                let available: Vec<&String> = self.keys.keys().collect();
+                let available = self.debug_known_kids();
                 eprintln!(
                     "[JWT Debug] JWKS '{}' does not contain kid '{}'. Available kids: {:?}",
                     self.jwks_url, kid, available
@@ -165,7 +274,7 @@ impl JwksValidator {
         })?;
 
         // Create validation settings
-        let mut validation = Validation::new(Algorithm::RS256);
+        let mut validation = Validation::new(algorithm);
         validation.validate_exp = true;
         validation.validate_nbf = false;
 
@@ -182,14 +291,17 @@ impl JwksValidator {
 
         // Decode and validate token
         if jwt_debug_enabled() {
-            eprintln!("[JWKS Validator] Attempting to validate with kid: {}", kid);
+            eprintln!(
+                "[JWKS Validator] Attempting to validate with kid: {} (alg: {:?})",
+                kid, algorithm
+            );
             eprintln!(
                 "[JWKS Validator] Validation settings: exp={}, nbf={}, aud={}",
                 validation.validate_exp, validation.validate_nbf, validation.validate_aud
             );
         }
 
-        let token_data = decode::<Value>(token, decoding_key, &validation).map_err(|e| {
+        let token_data = decode::<Value>(token, &decoding_key, &validation).map_err(|e| {
             if jwt_debug_enabled() {
                 eprintln!("[JWKS Validator] Validation failed: {:?}", e);
             }
@@ -259,7 +371,12 @@ impl JwksValidator {
     }
 
     pub fn debug_known_kids(&self) -> Vec<String> {
-        self.keys.keys().cloned().collect()
+        // Best-effort: used only for debug logging. `try_read` avoids
+        // blocking a sync caller; contention just yields an empty list.
+        match self.keys.try_read() {
+            Ok(keys) => keys.keys().cloned().collect(),
+            Err(_) => Vec::new(),
+        }
     }
 
     pub fn debug_allowed_audiences(&self) -> Option<&[String]> {
