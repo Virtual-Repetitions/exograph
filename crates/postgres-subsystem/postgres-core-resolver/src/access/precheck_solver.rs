@@ -15,7 +15,8 @@ use common::context::RequestContext;
 use common::value::Val;
 
 use core_model::access::{
-    AccessLogicalExpression, AccessPredicateExpression, AccessRelationalOp, FunctionCall,
+    AccessLogicalExpression, AccessPredicateExpression, AccessRelationalOp,
+    CommonAccessPrimitiveExpression, FunctionCall,
 };
 use core_resolver::access_solver::{
     AccessInput, AccessInputPath, AccessInputPathElement, AccessSolution, AccessSolver,
@@ -40,6 +41,10 @@ use super::database_solver::to_column_path;
 #[derive(Debug)]
 enum SolvedPrecheckPrimitiveExpression {
     Common(Option<Val>),
+    /// A context selection that resolved to `null` (see the database solver's `ContextNull`):
+    /// against another value it behaves as the value `null`; against a path or predicate it
+    /// fails closed instead of lowering to a SQL NULL literal.
+    ContextNull,
     Path(AccessPrimitiveExpressionPath, Option<String>),
     Predicate(AbstractPredicate),
 }
@@ -69,6 +74,33 @@ impl<'a> AccessSolver<'a, PrecheckAccessPrimitiveExpression, AbstractPredicateWr
                 )));
             } // If either side is None, we can't produce a predicate
         };
+
+        // A null-valued context selection compared against a field path or predicate fails
+        // closed rather than lowering to a SQL NULL literal (see the database solver); against
+        // another value it behaves as the value `null`.
+        if matches!(
+            (&left, &right),
+            (
+                SolvedPrecheckPrimitiveExpression::ContextNull,
+                SolvedPrecheckPrimitiveExpression::Path(..)
+                    | SolvedPrecheckPrimitiveExpression::Predicate(_)
+            ) | (
+                SolvedPrecheckPrimitiveExpression::Path(..)
+                    | SolvedPrecheckPrimitiveExpression::Predicate(_),
+                SolvedPrecheckPrimitiveExpression::ContextNull
+            )
+        ) {
+            return Ok(AccessSolution::Unsolvable(AbstractPredicateWrapper(
+                AbstractPredicate::False,
+            )));
+        }
+        let normalize = |expr: SolvedPrecheckPrimitiveExpression| match expr {
+            SolvedPrecheckPrimitiveExpression::ContextNull => {
+                SolvedPrecheckPrimitiveExpression::Common(Some(Val::Null))
+            }
+            other => other,
+        };
+        let (left, right) = (normalize(left), normalize(right));
 
         let ignore_missing_value = input_value
             .as_ref()
@@ -150,9 +182,14 @@ async fn reduce_primitive_expression<'a>(
         PrecheckAccessPrimitiveExpression::Common(expr) => {
             let primitive_expr =
                 reduce_common_primitive_expression(solver, request_context, expr).await?;
-            Ok(AccessSolution::Solved(
-                SolvedPrecheckPrimitiveExpression::Common(primitive_expr),
-            ))
+            let is_context_selection =
+                matches!(expr, CommonAccessPrimitiveExpression::ContextSelection(_));
+            Ok(AccessSolution::Solved(match primitive_expr {
+                Some(Val::Null) if is_context_selection => {
+                    SolvedPrecheckPrimitiveExpression::ContextNull
+                }
+                primitive_expr => SolvedPrecheckPrimitiveExpression::Common(primitive_expr),
+            }))
         }
         PrecheckAccessPrimitiveExpression::Path(path, parameter_name) => {
             let mut path_elements = match parameter_name {

@@ -74,6 +74,7 @@ mod tests {
                     @test("v2") v2: Boolean 
                     @test("v1_clone") v1_clone: Boolean 
                     @test("v2_clone") v2_clone: Boolean 
+                    @test("opt_user_id") opt_user_id: String?
                 }
 
                 @postgres
@@ -1134,5 +1135,197 @@ mod tests {
                 assert_eq!(solved_predicate, AbstractPredicate::True);
             }
         }
+    }
+    // An OPTIONAL context field whose source is absent (or explicitly null) must make the
+    // comparison fail closed, exactly like a missing non-optional field. Before the fix, the
+    // null surfaced as a literal and `self.owner_id == AccessContext.opt_user_id` lowered to
+    // `owner_id IS NULL`, admitting every row with a NULL column.
+    #[cfg_attr(not(target_family = "wasm"), tokio::test)]
+    #[cfg_attr(target_family = "wasm", wasm_bindgen_test::wasm_bindgen_test)]
+    async fn optional_context_null_fails_closed() {
+        let test_system = test_system().await;
+        let TestSystem {
+            system,
+            owner_id_column_path,
+            test_system_router,
+            ..
+        } = &test_system;
+        let test_system_router = test_system_router.as_ref();
+        let env = &MapEnvironment::from(HashMap::new());
+
+        let exprs = || {
+            [
+                // AccessContext.opt_user_id == self.owner_id
+                AccessPredicateExpression::RelationalOp(AccessRelationalOp::Eq(
+                    context_selection_expr("AccessContext", "opt_user_id"),
+                    Box::new(DatabaseAccessPrimitiveExpression::Column(
+                        owner_id_column_path.clone(),
+                        None,
+                    )),
+                )),
+                // self.owner_id == AccessContext.opt_user_id (commuted)
+                AccessPredicateExpression::RelationalOp(AccessRelationalOp::Eq(
+                    Box::new(DatabaseAccessPrimitiveExpression::Column(
+                        owner_id_column_path.clone(),
+                        None,
+                    )),
+                    context_selection_expr("AccessContext", "opt_user_id"),
+                )),
+                // self.owner_id != AccessContext.opt_user_id — Neq must not become IS NOT NULL
+                AccessPredicateExpression::RelationalOp(AccessRelationalOp::Neq(
+                    Box::new(DatabaseAccessPrimitiveExpression::Column(
+                        owner_id_column_path.clone(),
+                        None,
+                    )),
+                    context_selection_expr("AccessContext", "opt_user_id"),
+                )),
+            ]
+        };
+
+        // Field absent from the context source
+        let absent_context = test_request_context(json!({}), test_system_router, env);
+        // Field present but null
+        let null_context =
+            test_request_context(json!({"opt_user_id": null}), test_system_router, env);
+
+        for context in [&absent_context, &null_context] {
+            for expr in exprs() {
+                let solved_predicate = solve_access(&expr, context, system).await;
+                assert_eq!(solved_predicate, AbstractPredicate::False);
+            }
+        }
+
+        // A present value still produces the normal column comparison
+        let present_context =
+            test_request_context(json!({"opt_user_id": "u1"}), test_system_router, env);
+        let expr = AccessPredicateExpression::RelationalOp(AccessRelationalOp::Eq(
+            Box::new(DatabaseAccessPrimitiveExpression::Column(
+                owner_id_column_path.clone(),
+                None,
+            )),
+            context_selection_expr("AccessContext", "opt_user_id"),
+        ));
+        let solved_predicate = solve_access(&expr, &present_context, system).await;
+        assert_eq!(
+            solved_predicate,
+            AbstractPredicate::Eq(
+                test_system.owner_id_column(),
+                ColumnPath::Param(SQLParamContainer::string("u1".to_string())),
+            )
+        );
+
+        // A null-context comparison used as one arm of an OR must not poison the other arm
+        let or_expr = AccessPredicateExpression::LogicalOp(AccessLogicalExpression::Or(
+            Box::new(AccessPredicateExpression::RelationalOp(
+                AccessRelationalOp::Eq(
+                    Box::new(DatabaseAccessPrimitiveExpression::Column(
+                        owner_id_column_path.clone(),
+                        None,
+                    )),
+                    context_selection_expr("AccessContext", "opt_user_id"),
+                ),
+            )),
+            Box::new(boolean_column_selection(
+                test_system.published_column_path.clone(),
+            )),
+        ));
+        let solved_predicate = solve_access(&or_expr, &absent_context, system).await;
+        assert_eq!(
+            solved_predicate,
+            AbstractPredicate::Eq(
+                test_system.published_column(),
+                ColumnPath::Param(SQLParamContainer::bool(true)),
+            )
+        );
+    }
+
+    // Against another VALUE a null context selection behaves as the value `null`, so the
+    // documented `AuthContext.x == null` anonymity-check idiom keeps granting when the field
+    // is absent, and comparisons against real literals stay false.
+    #[cfg_attr(not(target_family = "wasm"), tokio::test)]
+    #[cfg_attr(target_family = "wasm", wasm_bindgen_test::wasm_bindgen_test)]
+    async fn optional_context_null_value_comparisons() {
+        let test_system = test_system().await;
+        let TestSystem {
+            system,
+            test_system_router,
+            ..
+        } = &test_system;
+        let test_system_router = test_system_router.as_ref();
+        let env = &MapEnvironment::from(HashMap::new());
+        let absent_context = test_request_context(json!({}), test_system_router, env);
+
+        let null_literal = || {
+            Box::new(DatabaseAccessPrimitiveExpression::Common(
+                CommonAccessPrimitiveExpression::NullLiteral,
+            ))
+        };
+        let string_literal = |value: &str| {
+            Box::new(DatabaseAccessPrimitiveExpression::Common(
+                CommonAccessPrimitiveExpression::StringLiteral(value.to_string()),
+            ))
+        };
+
+        // AccessContext.opt_user_id == null -> true when the field is absent
+        let expr = AccessPredicateExpression::RelationalOp(AccessRelationalOp::Eq(
+            context_selection_expr("AccessContext", "opt_user_id"),
+            null_literal(),
+        ));
+        assert_eq!(
+            solve_access(&expr, &absent_context, system).await,
+            AbstractPredicate::True
+        );
+
+        // AccessContext.opt_user_id != null -> false when the field is absent
+        let expr = AccessPredicateExpression::RelationalOp(AccessRelationalOp::Neq(
+            context_selection_expr("AccessContext", "opt_user_id"),
+            null_literal(),
+        ));
+        assert_eq!(
+            solve_access(&expr, &absent_context, system).await,
+            AbstractPredicate::False
+        );
+
+        // AccessContext.opt_user_id == "u1" -> false when the field is absent
+        let expr = AccessPredicateExpression::RelationalOp(AccessRelationalOp::Eq(
+            context_selection_expr("AccessContext", "opt_user_id"),
+            string_literal("u1"),
+        ));
+        assert_eq!(
+            solve_access(&expr, &absent_context, system).await,
+            AbstractPredicate::False
+        );
+    }
+
+    // An explicit `null` literal in a policy keeps IS NULL semantics: only context-sourced
+    // nulls fail closed.
+    #[cfg_attr(not(target_family = "wasm"), tokio::test)]
+    #[cfg_attr(target_family = "wasm", wasm_bindgen_test::wasm_bindgen_test)]
+    async fn null_literal_keeps_is_null_semantics() {
+        let test_system = test_system().await;
+        let TestSystem {
+            system,
+            owner_id_column_path,
+            test_system_router,
+            ..
+        } = &test_system;
+        let test_system_router = test_system_router.as_ref();
+        let env = &MapEnvironment::from(HashMap::new());
+
+        let context = test_request_context(json!({}), test_system_router, env);
+        let expr = AccessPredicateExpression::RelationalOp(AccessRelationalOp::Eq(
+            Box::new(DatabaseAccessPrimitiveExpression::Column(
+                owner_id_column_path.clone(),
+                None,
+            )),
+            Box::new(DatabaseAccessPrimitiveExpression::Common(
+                CommonAccessPrimitiveExpression::NullLiteral,
+            )),
+        ));
+        let solved_predicate = solve_access(&expr, &context, system).await;
+        assert_eq!(
+            solved_predicate,
+            AbstractPredicate::Eq(test_system.owner_id_column(), ColumnPath::Null)
+        );
     }
 }
