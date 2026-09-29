@@ -99,16 +99,29 @@ impl ContextExtractor for QueryExtractor {
             ));
         }
 
-        let matching_result = response_body_data[key].take();
+        // Distinguish "the key is absent from the response" (a wiring error)
+        // from "the query resolved to null" (a legitimate value for a
+        // nullable context field). Conflating them made every null @query
+        // result a context-extraction error, which surfaces as a blanket
+        // "Not authorized" on any operation that injects the context — the
+        // reason resolveAuthEmail had to return an empty-string sentinel
+        // (vreps-exo#266).
+        let matching_result = match response_body_data.get_mut(key) {
+            Some(value) => value.take(),
+            None => {
+                warn!(
+                    "[QueryExtractor] field '{}' missing in GraphQL response",
+                    key
+                );
+                return Err(ContextExtractionError::Generic(format!(
+                    "Could not find {key} in results while processing @query context"
+                )));
+            }
+        };
 
         if matching_result.is_null() {
-            warn!(
-                "[QueryExtractor] field '{}' missing in GraphQL response",
-                key
-            );
-            return Err(ContextExtractionError::Generic(format!(
-                "Could not find {key} in results while processing @query context"
-            )));
+            trace!("[QueryExtractor] field '{}' resolved to null", key);
+            return Ok(None);
         }
 
         Ok(Some(matching_result.to_owned()))
