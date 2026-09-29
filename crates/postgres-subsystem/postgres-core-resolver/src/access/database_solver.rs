@@ -20,7 +20,7 @@ use async_trait::async_trait;
 use common::context::RequestContext;
 use common::value::Val;
 
-use core_model::access::AccessRelationalOp;
+use core_model::access::{AccessRelationalOp, CommonAccessPrimitiveExpression};
 use core_resolver::access_solver::{
     AccessInput, AccessPredicate, AccessSolution, AccessSolver, AccessSolverError, eq_values,
     neq_values, reduce_common_primitive_expression,
@@ -108,6 +108,13 @@ impl AccessPredicate for AbstractPredicateWrapper {
 #[derive(Debug)]
 pub enum SolvedPrimitiveExpression {
     Common(Option<Val>),
+    /// A context selection that resolved to `null` (an optional context field whose source is
+    /// absent, or a `@query` source returning null). Kept distinct from `Common(Some(Val::Null))`
+    /// — an explicit `null` literal in the policy — because the two must lower differently
+    /// against a column: `self.field == null` means `field IS NULL`, but
+    /// `self.owner == AuthContext.userId` with no identity must fail closed rather than admit
+    /// every row whose column is NULL.
+    ContextNull,
     Column(PhysicalColumnPath),
 }
 
@@ -130,7 +137,14 @@ impl<'a> AccessSolver<'a, DatabaseAccessPrimitiveExpression, AbstractPredicateWr
                 DatabaseAccessPrimitiveExpression::Common(expr) => {
                     let primitive_expr =
                         reduce_common_primitive_expression(solver, request_context, expr).await?;
-                    AccessSolution::Solved(SolvedPrimitiveExpression::Common(primitive_expr))
+                    let is_context_selection =
+                        matches!(expr, CommonAccessPrimitiveExpression::ContextSelection(_));
+                    AccessSolution::Solved(match primitive_expr {
+                        Some(Val::Null) if is_context_selection => {
+                            SolvedPrimitiveExpression::ContextNull
+                        }
+                        primitive_expr => SolvedPrimitiveExpression::Common(primitive_expr),
+                    })
                 }
                 DatabaseAccessPrimitiveExpression::Column(column_path, _) => {
                     AccessSolution::Solved(SolvedPrimitiveExpression::Column(
@@ -156,6 +170,33 @@ impl<'a> AccessSolver<'a, DatabaseAccessPrimitiveExpression, AbstractPredicateWr
                 )));
             } // If either side is None, we can't produce a predicate
         };
+
+        // A null-valued context selection compared against a column fails closed: lowering it to
+        // a SQL NULL literal would turn `col == AuthContext.x` into `col IS NULL` and admit every
+        // row whose column is NULL (and `col != AuthContext.x` into `col IS NOT NULL`). Compared
+        // against anything else it behaves as the value `null`, preserving the
+        // `AuthContext.x == null` anonymity-check idiom.
+        if matches!(
+            (&left, &right),
+            (
+                SolvedPrimitiveExpression::ContextNull,
+                SolvedPrimitiveExpression::Column(_)
+            ) | (
+                SolvedPrimitiveExpression::Column(_),
+                SolvedPrimitiveExpression::ContextNull
+            )
+        ) {
+            return Ok(AccessSolution::Unsolvable(AbstractPredicateWrapper(
+                AbstractPredicate::False,
+            )));
+        }
+        let normalize = |expr: SolvedPrimitiveExpression| match expr {
+            SolvedPrimitiveExpression::ContextNull => {
+                SolvedPrimitiveExpression::Common(Some(Val::Null))
+            }
+            other => other,
+        };
+        let (left, right) = (normalize(left), normalize(right));
 
         type ColumnPredicateFn = fn(ColumnPath, ColumnPath) -> AbstractPredicate;
         type ValuePredicateFn = fn(Val, Val) -> AbstractPredicate;
@@ -223,6 +264,11 @@ impl<'a> AccessSolver<'a, DatabaseAccessPrimitiveExpression, AbstractPredicateWr
                         to_column_path(&column),
                         literal_column_path,
                     )))
+                }
+
+                (SolvedPrimitiveExpression::ContextNull, _)
+                | (_, SolvedPrimitiveExpression::ContextNull) => {
+                    unreachable!("ContextNull is normalized away before predicate construction")
                 }
             }
         };
