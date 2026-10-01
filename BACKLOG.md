@@ -411,3 +411,57 @@ user-agent tag — would make them diagnosable.
 (vreps-exo#311/#315) so local development stops reporting into the shared project.
 That removes the local noise; the expected-outcome noise from staging and
 production remains, tracked in vreps-exo#312.
+
+## 11. Node-compat calls abort the server: the Deno worker has no `NodeResolver`
+
+**Status:** open. vreps-exo#420 works around it by pinning and locking npm deps.
+**Found:** 2026-10-01. A vreps-exo staging deploy crash-looped on its first `/healthz` (Sentry VREPS-EXO-C2/C3)
+
+`libs/exo-deno/src/deno_module.rs` builds the worker with
+`node_services: Default::default()` in `worker_service_options`, so no
+`NodeResolver` or `PackageJsonResolver` is ever put in the op state. Several
+`deno_node` ops borrow one unconditionally. When JS reaches one, `OpState::borrow`
+panics inside a V8 callback, the panic cannot unwind, and the whole `exo-server`
+process aborts with SIGABRT:
+
+```
+panicked at deno_core-0.362.0/gotham_state.rs:74:3:
+required type Arc<node_resolver::resolution::NodeResolver<...>> is not present in GothamState container
+panic in a function that cannot unwind
+thread caused non-unwinding panic. aborting.
+```
+
+Verified on `exo-server` v0.34.1. Each of these, inside a `try/catch` in a `@deno`
+module, aborts the server on its first call:
+
+- `createRequire(Deno.cwd() + "/noop.js")("some-missing-pkg")`: bare-specifier
+  `require()` reaches `op_require_resolve_deno_dir`. Plain Deno 2.5.4 throws a
+  catchable "Cannot find module".
+- `util.deprecate(fn, "msg")()`: the warning check calls
+  `op_node_call_is_from_dependency`.
+- `Buffer(4)` without `new`: same op, via `showFlaggedDeprecation`.
+
+Bundling makes this worse. Every module is bundled into one `file:///main.js`,
+so frames from npm dependencies look like user code, and the "is this a
+dependency?" check always takes the borrowing path.
+
+**Why it matters.** Third-party code does all three routinely. @sentry/deno 11.2.0
+added a Hono integration that runs `createRequire(...)("hono/deno")` and catches
+the failure. Merely loading it took staging down, because the module loads on the
+first health check. One request should never be able to kill the process, and a
+JS `try/catch` should be able to contain a failed `require()`.
+
+**Fix.** Populate `node_services` with a real `NodeResolver` and
+`PackageJsonResolver`, built over `RealSys`, an empty npm resolver and the
+bundle's root. Then these ops behave as in Deno: a missing package throws
+"Cannot find module", and deprecation checks return a boolean. A side effect is
+that deprecation warnings from bundled dependencies will print, since nothing in
+`main.js` counts as an npm package. That's harmless. Regression test: a
+`test_js` module per trigger above, asserting the call returns or throws inside
+JS and the worker keeps serving.
+
+**Workaround in use.** vreps-exo pins every `npm:` import to an exact version,
+and its Dockerfile hands `deno.json` + `deno.lock` to `exo build`, so the bundle
+is reproducible. A unit test (`tests/unit/npm-specifiers-pinned.test.ts`)
+enforces both. Every npm dependency bump still needs a smoke run on
+`exo-server`: a module that loads the new version must survive its first call.
