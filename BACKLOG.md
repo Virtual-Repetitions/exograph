@@ -412,6 +412,41 @@ user-agent tag — would make them diagnosable.
 That removes the local noise; the expected-outcome noise from staging and
 production remains, tracked in vreps-exo#312.
 
+## 10. Access solver: comparison against an absent optional context field compiled to `IS NULL` — shipped in v0.34.1 (PR #71)
+
+**Status:** fixed in v0.34.1 (PR #71, merged 2026-09-29). Each deployment is
+protected once it runs an engine at v0.34.1 or later.
+**Found:** 2026-09-29, Neon Auth proving run (jrnba.app#633)
+
+When an access expression compared a column to an *optional* context field
+whose source was absent (no JWT, or a token without the claim), the compiled
+SQL matched rows where the column IS NULL instead of failing closed:
+
+- `self.owner_uuid == AuthContext.userId` with no userId matched every `teams`
+  row whose `owner_uuid` IS NULL. `!=` had the dual hole (`IS NOT NULL`).
+- Inside nested `some(...)` chains, the same leaf admitted the enclosing row.
+  `users` rows, emails included, were readable with `x-hasura-role: public`.
+
+**Cause.** `extract_context_field` (`FieldType::Optional` arm) mapped an absent
+source to `Some(Val::Null)` rather than `None`, and the postgres solvers treated
+that as an ordinary null literal. Non-optional fields extract as `None` and
+already failed closed, so the solver tests (all built on non-optional fields)
+never caught it.
+
+**Fix.** A null-valued context selection is tracked as `ContextNull` in the
+database and precheck solvers. Against a column, or a precheck path or
+predicate, it fails closed for every operator. Against another value it still
+behaves as null, so the documented `AuthContext.id == null` anonymity idiom keeps
+granting, and explicit `self.field == null` literals keep `IS NULL` semantics.
+Regression tests: `optional_context_null_fails_closed`,
+`optional_context_null_value_comparisons`, `null_literal_keeps_is_null_semantics`.
+
+**Consumer impact.** Failing closed broke vreps-exo's sign-in operations, which
+re-read `user` as the still-anonymous caller. vreps-exo#405 handles that with
+`fetchSignInUserRecord`, so that code must ship together with an engine at
+v0.34.1 or later. The policy-side guard tried first, vreps-exo#406, was closed
+as superseded.
+
 ## 11. Node-compat calls abort the server: the Deno worker has no `NodeResolver`
 
 **Status:** open. vreps-exo#420 works around it by pinning and locking npm deps.
