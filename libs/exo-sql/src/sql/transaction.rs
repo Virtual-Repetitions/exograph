@@ -10,7 +10,7 @@
 use std::fmt::Debug;
 
 use tokio_postgres::{GenericClient, Row, error::SqlState};
-use tracing::{error, info, instrument, warn};
+use tracing::{debug, error, instrument, warn};
 
 use crate::{
     Column, Database, Predicate, SQLParamContainer, TableId,
@@ -201,12 +201,11 @@ async fn run_query(
         .map(|p| (p.param.as_pg(), p.param_type.clone()))
         .collect();
 
-    info!("Executing SQL operation: {}", stmt);
-    println!("[debug] SQL: {}", stmt);
-    println!(
-        "[debug] Params: {:?}",
-        params.iter().map(|(p, _)| p).collect::<Vec<_>>()
-    );
+    // Statement text only, and only at debug. Bound parameters carry user data
+    // (emails, ids, free text) and are never logged. This used to `println!` the
+    // statement and its parameters unconditionally, which bypassed `EXO_LOG`
+    // entirely and put personal data in production logs (vreps-exo#468).
+    debug!("Executing SQL operation: {}", stmt);
 
     let retry_config = RetryConfig::from_env();
     let allow_retry = retry_config.max_retries > 0 && operation_is_read_only(&operation);
