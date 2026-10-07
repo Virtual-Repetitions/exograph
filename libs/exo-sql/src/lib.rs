@@ -34,6 +34,10 @@
 /// This crate also contains, but doesn't expose, lower level primitives for SQL
 /// operations.
 pub mod schema;
+// The query-execution path must log only through `tracing`, so `EXO_LOG` governs
+// it. A bare print here bypasses the filter and reaches production logs
+// regardless of level (vreps-exo#468), so clippy rejects one.
+#[deny(clippy::print_stdout, clippy::print_stderr)]
 #[macro_use]
 mod sql;
 mod asql;

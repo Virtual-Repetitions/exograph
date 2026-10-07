@@ -39,9 +39,11 @@ impl ToSql for SQLValue {
             out.extend(self.value.as_slice());
             Ok(tokio_postgres::types::IsNull::No)
         } else {
-            println!(
-                "Type mismatch expected {:?} got {:?} {:?}",
-                ty, self.type_, self
+            // Types only: the value's bytes are user data and stay out of logs.
+            tracing::warn!(
+                expected = ?ty,
+                actual = ?self.type_,
+                "SQLValue type mismatch"
             );
             Err(DatabaseError::Validation("Type mismatch".into()).into())
         }
