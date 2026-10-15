@@ -1,0 +1,42 @@
+// A Deno operation's request transaction must begin at its first write, not at the read that
+// extracts a `@query` context field. Otherwise the engine's connection sits idle in transaction
+// while the resolver does slow external work, and the database's
+// `idle_in_transaction_session_timeout` (1s in tests/init-timeouts.sql) kills it.
+
+context Probe {
+    // Resolved by running `query { probeUserCount }`, which reads through the engine
+    @query("probeUserCount") userCount: Int
+}
+
+@postgres
+module ProbeDatabase {
+    @access(true)
+    type User {
+        @pk id: Int = autoIncrement()
+        username: String
+    }
+
+    // A view over `current_setting(...)` (see tests/init-timeouts.sql) that shows the timeout the
+    // engine's own pooled session runs with, so the test cannot pass without it being in effect
+    @table(managed=false)
+    @access(query=true, mutation=false)
+    type EngineSessionSetting {
+        @pk id: Int
+        value: String
+    }
+}
+
+@deno("ops.ts")
+module SlowOps {
+    // Context source: reads `users` through the engine
+    @access(true) query probeUserCount(@inject exograph: Exograph): Int
+
+    // Extracts the context (an engine read), then sleeps
+    @access(true) export mutation slowAfterContext(@inject probe: Probe, ms: Int): Int
+
+    // Extracts the context, reads, sleeps, then writes through the engine
+    @access(true) export mutation readSleepWrite(@inject probe: Probe, @inject exograph: Exograph, username: String, ms: Int): Int
+
+    // Extracts the context, reads, writes, reads again, then fails (the write must roll back)
+    @access(true) export mutation readWriteReadThenFail(@inject probe: Probe, @inject exograph: Exograph, username: String): Int
+}

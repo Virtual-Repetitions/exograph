@@ -33,6 +33,16 @@ use crate::{
 /// For example, we may have a Deno operation that may execute multiple queries/mutations. We need to create a transaction
 /// before the first database operation and finalize only when we are about to return results. Note that we can't
 /// just wrap the work in a transaction because, for example, a Deno operation may not do any database work at all.
+///
+/// When a transaction has been requested (see [`TransactionHolder::ensure_transaction`]), it begins at the
+/// request's first *write*, not its first statement. Reads that come before any write run in autocommit on the
+/// request's client; once the transaction is open, every later statement (reads included) joins it, so reads
+/// still see the request's own uncommitted writes. Under Postgres's default READ COMMITTED isolation each
+/// statement takes a fresh snapshot anyway, so a read made before the first write gains nothing from being
+/// inside the transaction. Deferring `BEGIN` matters for Deno operations: their context extraction (for
+/// example a `@query` context field) reads through the engine before the JavaScript runs, and if that read
+/// opened the transaction, the engine's connection would sit idle in transaction for the whole of the
+/// resolver's external work and be killed by `idle_in_transaction_session_timeout`.
 pub struct TransactionHolder {
     state: LazyLock<Mutex<TransactionState>>,
     needs_transaction: AtomicBool,
@@ -58,11 +68,14 @@ impl TransactionHolder {
         Self::default()
     }
 
-    /// Set the flag to indicate that a transaction must be used when executing work.
+    /// Set the flag to indicate that the request's writes must be atomic.
     ///
     /// Typically, a caller higher-up in the stack calls this method when it determines that a transaction
     /// must be used. (For example, when an operation has an interceptor and caller can't know if the interceptor
     /// will also do some database work).
+    ///
+    /// The flag does not begin a transaction by itself: `BEGIN` is deferred to the first write (see
+    /// [`TransactionHolder`]), and every statement after that runs inside the transaction until it is finalized.
     pub fn ensure_transaction(&self) {
         self.needs_transaction
             .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -179,7 +192,14 @@ impl TransactionState {
         work: TransactionScript<'_>,
         needs_tx: bool,
     ) -> Result<TransactionStepResult, DatabaseError> {
-        if work.needs_transaction() || needs_tx {
+        let use_tx = should_use_transaction(
+            self.transaction.is_some(),
+            work.needs_transaction(),
+            needs_tx,
+            work.is_read_only(),
+        );
+
+        if use_tx {
             let tx = self.ensure_transaction().await?;
             work.execute(database, tx.deref_mut()).await
         } else if let Some(ref mut client) = self.client {
@@ -208,9 +228,56 @@ impl TransactionState {
     }
 }
 
+/// Decide whether a piece of work runs inside the request transaction (opening it if needed) or in
+/// autocommit on the request's client.
+///
+/// - Once the transaction is open, everything joins it, so later reads see the request's own writes.
+/// - A multi-step script always needs a transaction of its own to be atomic.
+/// - When the request asked for a transaction, only a write opens it. A read that comes before the
+///   first write runs in autocommit, so it never leaves the connection idle in transaction while the
+///   rest of the request (for example a Deno resolver's external work) runs.
+fn should_use_transaction(
+    transaction_open: bool,
+    multi_step_script: bool,
+    transaction_requested: bool,
+    read_only: bool,
+) -> bool {
+    transaction_open || multi_step_script || (transaction_requested && !read_only)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transaction_routing() {
+        // (transaction_open, multi_step_script, transaction_requested, read_only) => use_tx
+        let cases = [
+            // Nothing requested a transaction: single-step work runs in autocommit.
+            ((false, false, false, true), false),
+            ((false, false, false, false), false),
+            // A multi-step script always runs in a transaction.
+            ((false, true, false, false), true),
+            ((false, true, true, false), true),
+            // Requested, but no write yet: a read stays in autocommit (the fix).
+            ((false, false, true, true), false),
+            // Requested, and this is the first write: it opens the transaction.
+            ((false, false, true, false), true),
+            // Once open, reads and writes join it (read-your-writes), requested or not.
+            ((true, false, true, true), true),
+            ((true, false, false, true), true),
+            ((true, false, true, false), true),
+            ((true, true, true, false), true),
+        ];
+
+        for ((open, multi, requested, read_only), expected) in cases {
+            assert_eq!(
+                should_use_transaction(open, multi, requested, read_only),
+                expected,
+                "open={open} multi_step={multi} requested={requested} read_only={read_only}"
+            );
+        }
+    }
 
     // Note: These tests would require a real database connection to be comprehensive
     // For now, we just test the basic state management

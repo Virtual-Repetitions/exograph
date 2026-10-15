@@ -175,3 +175,138 @@ pub trait OrderByTransformer {
         database: &Database,
     ) -> OrderBy;
 }
+
+#[cfg(test)]
+mod tests {
+    use multiplatform_test::multiplatform_test;
+
+    use crate::{
+        AbstractPredicate, AbstractSelect, ColumnPath, PhysicalColumnPath,
+        asql::{
+            delete::AbstractDelete,
+            insert::{AbstractInsert, ColumnValuePair, InsertionElement, InsertionRow},
+            selection::{AliasedSelectionElement, Selection, SelectionElement},
+            update::AbstractUpdate,
+        },
+        sql::{
+            SQLParamContainer, column::Column, predicate::Predicate, transaction::TransactionStep,
+        },
+        transform::{pg::Postgres, test_util::TestSetup},
+    };
+
+    use super::*;
+
+    fn venue_selection(setup: &TestSetup) -> AbstractSelect {
+        AbstractSelect {
+            table_id: setup.venues_table,
+            selection: Selection::Seq(vec![AliasedSelectionElement::new(
+                "id".to_string(),
+                SelectionElement::Physical(setup.venues_id_column),
+            )]),
+            predicate: Predicate::True,
+            order_by: None,
+            offset: None,
+            limit: None,
+        }
+    }
+
+    fn name_is(setup: &TestSetup, name: &str) -> AbstractPredicate {
+        AbstractPredicate::Eq(
+            ColumnPath::Physical(PhysicalColumnPath::leaf(setup.venues_name_column)),
+            ColumnPath::Param(SQLParamContainer::string(name.to_string())),
+        )
+    }
+
+    // The transaction holder defers `BEGIN` until the first script that is not read-only, so a
+    // query must classify as read-only and every kind of write (and its prechecks) must not.
+
+    #[multiplatform_test]
+    fn select_script_is_read_only() {
+        TestSetup::with_setup(|setup| {
+            let script = OperationTransformer::to_transaction_script(
+                &Postgres {},
+                &setup.database,
+                AbstractOperation::Select(AbstractSelect {
+                    predicate: name_is(&setup, "v1"),
+                    ..venue_selection(&setup)
+                }),
+            );
+            assert!(script.is_read_only());
+            assert!(!script.needs_transaction());
+        });
+    }
+
+    #[multiplatform_test]
+    fn insert_script_is_not_read_only() {
+        TestSetup::with_setup(|setup| {
+            let script = OperationTransformer::to_transaction_script(
+                &Postgres {},
+                &setup.database,
+                AbstractOperation::Insert(AbstractInsert {
+                    table_id: setup.venues_table,
+                    rows: vec![InsertionRow {
+                        elems: vec![InsertionElement::SelfInsert(ColumnValuePair::new(
+                            setup.venues_name_column,
+                            Column::Param(SQLParamContainer::string("v1".to_string())),
+                        ))],
+                    }],
+                    selection: venue_selection(&setup),
+                    precheck_predicates: vec![],
+                }),
+            );
+            assert!(!script.is_read_only());
+        });
+    }
+
+    #[multiplatform_test]
+    fn update_script_with_precheck_is_not_read_only() {
+        TestSetup::with_setup(|setup| {
+            let script = OperationTransformer::to_transaction_script(
+                &Postgres {},
+                &setup.database,
+                AbstractOperation::Update(AbstractUpdate {
+                    table_id: setup.venues_table,
+                    predicate: name_is(&setup, "v1"),
+                    column_values: vec![(
+                        setup.venues_name_column,
+                        Column::Param(SQLParamContainer::string("v2".to_string())),
+                    )],
+                    nested_updates: vec![],
+                    nested_inserts: vec![],
+                    nested_deletes: vec![],
+                    selection: venue_selection(&setup),
+                    precheck_predicates: vec![name_is(&setup, "v1")],
+                }),
+            );
+            assert!(!script.is_read_only());
+        });
+    }
+
+    #[multiplatform_test]
+    fn delete_script_is_not_read_only() {
+        TestSetup::with_setup(|setup| {
+            let script = OperationTransformer::to_transaction_script(
+                &Postgres {},
+                &setup.database,
+                AbstractOperation::Delete(AbstractDelete {
+                    table_id: setup.venues_table,
+                    selection: venue_selection(&setup),
+                    predicate: name_is(&setup, "v1"),
+                    precheck_predicates: vec![],
+                }),
+            );
+            assert!(!script.is_read_only());
+        });
+    }
+
+    #[multiplatform_test]
+    fn precheck_step_is_not_read_only() {
+        // A precheck is a SELECT, but it only ever guards a write, so it must not count as a read.
+        TestSetup::with_setup(|setup| {
+            let precheck = Postgres {}.to_select(venue_selection(&setup), &setup.database);
+            let mut script = TransactionScript::default();
+            script.add_step(TransactionStep::Precheck(precheck));
+            assert!(!script.is_read_only());
+        });
+    }
+}
