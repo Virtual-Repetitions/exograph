@@ -465,3 +465,37 @@ and its Dockerfile hands `deno.json` + `deno.lock` to `exo build`, so the bundle
 is reproducible. A unit test (`tests/unit/npm-specifiers-pinned.test.ts`)
 enforces both. Every npm dependency bump still needs a smoke run on
 `exo-server`: a module that loads the new version must survive its first call.
+
+## 12. A request that omits a declared nullable variable is rejected
+
+**Status:** open — fixed upstream in `980947bc` ("fix: accept omitted nullable
+arguments and variables per GraphQL spec", exograph #2101); the fork
+(v0.34.1 + 2) predates it. Worked around in `vreps-web` (#949) and
+`playbook-git` (#5915) by always sending every declared variable.
+**Found:** 2026-10-13 (coach skill-tree submit), again 2026-10-16 (the app's
+leaderboard query)
+
+`OperationValidator::var_value` looks the variable up in the request's
+`variables` map and returns `ValidationError::VariableNotFound` when it is
+absent — for every declared variable, nullable or not, default or not:
+
+```
+Variable 'source_type' not found
+```
+
+The spec (and every GraphQL client) treats an omitted nullable variable as
+"not provided": the argument is left out, or the declared default applies.
+JSON drops `undefined`, so `{ source_type: undefined }` is omitted; a generated
+client that serializes only assigned fields (AutoGQL's `ShouldSerialize*`)
+hits this on any optional filter it leaves unset, and the error reads like a
+typo in the client rather than an engine rule.
+
+Upstream's `var_value` now returns `Option<ConstValue>`: a provided value is
+deserialized; an absent one takes the declared default, is `None` when the
+type is nullable, and errors only when it is non-null.
+
+**What to do:** bring the fork past upstream `980947bc` (merge upstream `main`
+or cherry-pick the commit onto the fork's validator), release, and bump
+`EXOGRAPH_TAG` in `vreps-exo`. Then the explicit-null builders in web#949 and
+the "send every variable" rule in playbook-git#5915 become unnecessary (keep
+them; they are harmless).
