@@ -1,3 +1,10 @@
+# Builds and pushes ghcr.io/virtual-repetitions/exograph when a merge carries a
+# version that has no `v<version>` image yet. A merge that keeps the version in
+# Cargo.toml builds nothing (bump it to publish, or run this workflow by hand to
+# rebuild), and a newer merge carrying the same unpublished version cancels the
+# older build. Deployments pin `v<version>`; `latest` and `sha-<short>` only move
+# when a new version is built.
+
 name: Build and Publish Docker Image
 
 on:
@@ -21,7 +28,66 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      build: ${{ steps.plan.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: Cargo.toml
+          sparse-checkout-cone-mode: false
+
+      - name: Skip versions that are already published
+        id: plan
+        run: |
+          set -euo pipefail
+          VERSION=$(awk -F\" '/^version =/ {print $2; exit}' Cargo.toml)
+          if [ -z "$VERSION" ]; then
+            echo "Unable to determine version from Cargo.toml" >&2
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "Manual run: rebuilding v${VERSION}"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Ask the registry directly: `docker manifest inspect` reports the
+          # multi-manifest images buildx pushes as missing.
+          IMAGE=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')
+          STATUS=000
+          if TOKEN=$(curl -fsSL "https://${REGISTRY}/token?scope=repository:${IMAGE}:pull" | jq -r .token); then
+            STATUS=$(curl -s -o /dev/null -w '%{http_code}' -I \
+              -H "Authorization: Bearer ${TOKEN}" \
+              -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json" \
+              "https://${REGISTRY}/v2/${IMAGE}/manifests/v${VERSION}" || true)
+          fi
+
+          if [ "$STATUS" = "200" ]; then
+            echo "${IMAGE}:v${VERSION} is already published; bump the version in Cargo.toml to build a new one."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### ⏭️ Skipped: v${VERSION} is already published"
+              echo ""
+              echo "Bump the version in Cargo.toml to publish a new image, or run this workflow by hand to rebuild v${VERSION}."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "${IMAGE}:v${VERSION} not found (HTTP ${STATUS}); building it"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build-and-push:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    concurrency:
+      group: ${{ github.workflow }}-v${{ needs.plan.outputs.version }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -45,17 +111,6 @@ jobs:
           echo "environment=${ENV}" >> $GITHUB_OUTPUT
           echo "Building for environment: ${ENV}"
 
-      - name: Read Exograph version
-        id: version
-        run: |
-          VERSION=$(awk -F\" '/^version =/ {print $2; exit}' Cargo.toml)
-          if [ -z "$VERSION" ]; then
-            echo "Unable to determine version from Cargo.toml" >&2
-            exit 1
-          fi
-          echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Detected version: ${VERSION}"
-      
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       
@@ -74,7 +129,7 @@ jobs:
           tags: |
             type=raw,value=latest
             type=sha
-            type=raw,value=v${{ steps.version.outputs.value }}
+            type=raw,value=v${{ needs.plan.outputs.version }}
       
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -94,7 +149,7 @@ jobs:
           echo "### 🐳 Docker Image Published" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** ${{ steps.tags.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** ${{ steps.version.outputs.value }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.plan.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Tags:** latest, sha-${GITHUB_SHA::7}, v${{ steps.version.outputs.value }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Tags:** latest, sha-${GITHUB_SHA::7}, v${{ needs.plan.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

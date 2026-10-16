@@ -1,4 +1,9 @@
-# Workflow to build and publish the Windows binaries on every merge to main.
+# Workflow to build and publish the Windows binaries when a merge to main carries
+# a version that has not been published yet.
+#
+# Like build-unix-binaries.yml: a merge that keeps the version in Cargo.toml
+# builds nothing (bump it to publish, or run this workflow by hand to rebuild),
+# and a newer merge carrying the same unpublished version cancels the older build.
 #
 # Performs:
 # - Build exo, exo-server, exo-lsp and exo-mcp-bridge for x86_64-pc-windows-msvc in release mode
@@ -23,28 +28,67 @@ env:
   NODE_VERSION: 24
   TARGET: x86_64-pc-windows-msvc
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
-  build-windows:
-    runs-on: windows-2022
-
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      build: ${{ steps.plan.outputs.build }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          sparse-checkout: Cargo.toml
+          sparse-checkout-cone-mode: false
 
-      - name: Read Exograph version
-        id: version
+      - name: Skip versions that are already published
+        id: plan
         shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           VERSION=$(awk -F\" '/^version =/ {print $2; exit}' Cargo.toml)
           if [ -z "$VERSION" ]; then
             echo "Unable to determine version from Cargo.toml" >&2
             exit 1
           fi
-          echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Detected version: ${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "Manual run: rebuilding v${VERSION}"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          PUBLISHED=$(gh release view "v${VERSION}" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' || true)
+          MISSING=""
+          for asset in "exograph-${TARGET}.zip" "exograph-${TARGET}.zip.sha256"; do
+            grep -qxF "$asset" <<< "$PUBLISHED" || MISSING="${MISSING} ${asset}"
+          done
+
+          if [ -n "$MISSING" ]; then
+            echo "v${VERSION} still needs:${MISSING}"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "v${VERSION} is already published; bump the version in Cargo.toml to build a new one."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### ⏭️ Skipped: v${VERSION} is already published"
+              echo ""
+              echo "Bump the version in Cargo.toml to publish a new build, or run this workflow by hand to rebuild v${VERSION}."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  build-windows:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    concurrency:
+      group: ${{ github.workflow }}-v${{ needs.plan.outputs.version }}
+      cancel-in-progress: true
+    runs-on: windows-2022
+
+    steps:
+      - uses: actions/checkout@v6
 
       - name: Install deps
         run: choco install protoc
@@ -108,14 +152,14 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: v${{ steps.version.outputs.value }}
+          TAG: v${{ needs.plan.outputs.version }}
         run: |
           set -euo pipefail
           if ! gh release view "$TAG" > /dev/null 2>&1; then
             echo "Creating release $TAG"
             gh release create "$TAG" \
               --title "$TAG" \
-              --notes "Windows binaries for Exograph ${{ steps.version.outputs.value }} (built from ${GITHUB_SHA})" \
+              --notes "Windows binaries for Exograph ${{ needs.plan.outputs.version }} (built from ${GITHUB_SHA})" \
               --target "$GITHUB_SHA"
           else
             echo "Release $TAG already exists, uploading assets to it"
@@ -131,7 +175,7 @@ jobs:
           {
             echo "### 🪟 Windows binaries published"
             echo ""
-            echo "**Release:** v${{ steps.version.outputs.value }}"
+            echo "**Release:** v${{ needs.plan.outputs.version }}"
             echo "**Target:** ${{ env.TARGET }}"
             echo "**Commit:** ${GITHUB_SHA}"
           } >> "$GITHUB_STEP_SUMMARY"
