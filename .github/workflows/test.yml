@@ -16,8 +16,10 @@ env:
   CARGO_TERM_COLOR: always
   NODE_VERSION: 24
 
+# A new push cancels the older run on the same PR, and a merge to main cancels
+# the older main run: its PR was already tested, and the newer commit contains it.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:

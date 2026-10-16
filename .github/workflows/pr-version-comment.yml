@@ -29,11 +29,9 @@ jobs:
               github.rest.pulls.listFiles,
               { owner, repo, pull_number: pr.number }
             );
-            const cargoChanged = files.some((f) => f.filename === "Cargo.toml");
-            if (!cargoChanged) {
-              core.info("Cargo.toml not changed; skipping.");
-              return;
-            }
+            const docsOnly = files.every(
+              (f) => f.filename.endsWith(".md") || f.filename.startsWith("docs/")
+            );
 
             async function getVersion(ref) {
               const res = await github.rest.repos.getContent({
@@ -55,13 +53,18 @@ jobs:
               return;
             }
 
-            if (baseVersion === headVersion) {
-              core.info("Version unchanged; skipping.");
-              return;
-            }
-
+            // The build workflows publish only versions that have not been
+            // published yet, so a PR without a bump ships nothing when merged.
             const marker = "<!-- version-bump -->";
-            const body = `${marker}\nVersion bump detected: \`${baseVersion}\` → \`${headVersion}\``;
+            let body;
+            if (baseVersion !== headVersion) {
+              body = `${marker}\nVersion bump detected: \`${baseVersion}\` → \`${headVersion}\`. Merging builds and publishes \`v${headVersion}\`.`;
+            } else if (docsOnly) {
+              core.info("Docs-only change without a version bump; skipping.");
+              return;
+            } else {
+              body = `${marker}\nNo version bump: this PR keeps the version at \`${headVersion}\`, so merging it won't publish new binaries or images. If it changes what Exograph does, bump the version (\`sh scripts/bump-version.sh patch\`, then \`cargo update --workspace\`).`;
+            }
 
             const comments = await github.paginate(
               github.rest.issues.listComments,
