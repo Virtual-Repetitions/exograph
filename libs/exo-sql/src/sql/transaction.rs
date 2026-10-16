@@ -91,6 +91,22 @@ impl<'a> TransactionScript<'a> {
     pub fn needs_transaction(&self) -> bool {
         self.steps.len() > 1
     }
+
+    /// Whether every step of the script is a plain `SELECT`.
+    ///
+    /// A query always lowers to a single concrete `Select` step. Anything else (inserts, updates,
+    /// deletes, CTEs, template/dynamic/filter steps, and the prechecks that guard updates and
+    /// deletes) belongs to a write and is treated as one. The transaction holder uses this to
+    /// defer `BEGIN` until the first write of a request (see `TransactionHolder`).
+    pub fn is_read_only(&self) -> bool {
+        self.steps.iter().all(|step| {
+            matches!(
+                step,
+                TransactionStep::Concrete(concrete)
+                    if matches!(concrete.operation, SQLOperation::Select(_))
+            )
+        })
+    }
 }
 
 #[derive(Debug)]

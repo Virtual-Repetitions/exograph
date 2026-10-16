@@ -500,3 +500,86 @@ and its Dockerfile hands `deno.json` + `deno.lock` to `exo build`, so the bundle
 is reproducible. A unit test (`tests/unit/npm-specifiers-pinned.test.ts`)
 enforces both. Every npm dependency bump still needs a smoke run on
 `exo-server`: a module that loads the new version must survive its first call.
+
+## 12. Deno operations die at the database's idle-in-transaction timeout — shipped in v0.34.3 (PR #75)
+
+**Status:** fixed in v0.34.3 (PR #75). Each deployment is protected once it runs an
+engine at v0.34.3 or later.
+**Found:** 2026-10-15, vreps-exo reporting stack (exo#543–#547): `runNightlyReporting`
+on the `neon-tests` CI job
+
+A Deno operation that injected a context with a `@query` field, then ran longer than
+the database's `idle_in_transaction_session_timeout` (30s on vreps-exo's databases,
+migration `20260721120000000_set_db_timeouts`), failed with
+`[{"message":"Internal server error"}]`. The resolver's own writes had already
+committed. The logs showed:
+
+```
+FATAL:  terminating connection due to idle-in-transaction timeout   (Postgres)
+WARN deadpool.postgres: Connection error: db error                  (exo-server)
+```
+
+**Cause.** The engine opened the request transaction at the request's first SQL
+statement, even a read:
+
+- `deno-graphql-resolver` calls `ensure_transaction()` for every Deno operation. That
+  sets a sticky flag on the request's `TransactionHolder`, and while the flag is set,
+  every statement opens or joins the transaction.
+- Extracting a `@query` context field (vreps-exo's `AuthContext.userEmail` →
+  `resolveAuthEmail`) runs a query through the same holder before the JavaScript
+  starts. So the first statement was a `SELECT` that ran
+  `START TRANSACTION; SELECT email, email_verified_at FROM users …` on the engine's
+  pooled connection.
+- The resolver then did its real work on its own postgres.js pool. The engine
+  connection sat idle in the open transaction until the resolver returned.
+- Past the timeout, Postgres killed the connection. The final `COMMIT` in
+  `resolve_in_memory_for_payload` failed, and the client got "Internal server error".
+
+Any Deno operation that reads through the engine and then does more than 30s of
+external work hits the same failure, with or without a context.
+
+**Fix.** The request transaction now begins at the first *write*:
+
+- `TransactionScript::is_read_only` is true only for a single plain `SELECT`. Inserts,
+  updates, deletes, CTEs, template and dynamic steps, and the prechecks that guard a
+  write all count as writes.
+- `TransactionState::execute_work` routes work through `should_use_transaction`.
+  Once the transaction is open, everything joins it. A multi-step script always uses
+  it. When the flag is set, only a write opens it, and reads before the first write
+  run in autocommit on the same client.
+
+This keeps the re-entrant guarantees:
+
+- Every write is still inside the one transaction, so a failing Deno resolver or a
+  failing field of a multi-field document still rolls everything back.
+- Reads after the first write join the transaction, so they see the request's
+  uncommitted rows. Context extracted after a write also sees them.
+
+Moving the earlier reads out of the transaction loses nothing under the default
+READ COMMITTED isolation, where each statement takes a fresh snapshot anyway.
+
+Regression tests:
+
+- the `deno-lazy-transaction` integration test, with a 1s timeout. It fails on
+  v0.34.2 and passes on v0.34.3. It covers context then sleep; read, sleep, write;
+  and read, write, read, fail (read-your-writes and rollback).
+- `transaction_routing` and the `*_is_read_only` / `*_is_not_read_only` unit tests
+
+**Still true.** A Deno operation that writes through the engine and then runs past
+the timeout still dies. Atomicity needs the transaction open until the resolver
+returns. Long work must be chunked.
+
+Two assumptions:
+
+- the database runs the default isolation level. Under `REPEATABLE READ`, reads before
+  the first write no longer share the write's snapshot.
+- `SELECT`s have no side effects. A read that calls a volatile, writing function
+  through a view would now autocommit.
+
+The engine still holds one pooled client for the whole request, so pool pressure is
+unchanged. The client is now idle, not idle in transaction.
+
+**Consumer impact.** None required: the fix only changes when `BEGIN` is sent.
+vreps-exo keeps the nightly runner's time budget and resume cursor (exo#543), and the
+web cron route loops on that cursor, as defence in depth. `@query` context reads no
+longer start the 30s clock.

@@ -1,0 +1,75 @@
+stages:
+    # The engine's own session runs with the 1s idle-in-transaction timeout from init-timeouts.sql
+    - operation: |
+        query {
+            engineSessionSettings {
+                value
+            }
+        }
+      response: |
+        {
+            "data": {
+                "engineSessionSettings": [
+                    {
+                        "value": "1s"
+                    }
+                ]
+            }
+        }
+
+    # Extracting the @query context reads through the engine. Sleeping well past the timeout after
+    # that read must not kill the request.
+    - operation: |
+        mutation {
+            slowAfterContext(ms: 2500)
+        }
+      response: |
+        {
+            "data": {
+                "slowAfterContext": 0
+            }
+        }
+
+    # Reads, sleeps past the timeout, then writes: the write opens the transaction and commits
+    - operation: |
+        mutation {
+            readSleepWrite(username: "alice", ms: 2500)
+        }
+      response: |
+        {
+            "data": {
+                "readSleepWrite": 1
+            }
+        }
+
+    # Once a write has opened the transaction, later reads join it and see the uncommitted row...
+    - operation: |
+        mutation {
+            readWriteReadThenFail(username: "bob")
+        }
+      response: |
+        {
+            "errors": [
+                {
+                    "message": "saw 2 users"
+                }
+            ]
+        }
+
+    # ...and the write rolls back when the operation fails
+    - operation: |
+        query {
+            users {
+                username
+            }
+        }
+      response: |
+        {
+            "data": {
+                "users": [
+                    {
+                        "username": "alice"
+                    }
+                ]
+            }
+        }
