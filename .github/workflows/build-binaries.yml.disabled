@@ -91,7 +91,7 @@ jobs:
       matrix:
         # For these target platforms
         include:
-          - os: macos-14
+          - os: macos-15
             deps-script: |
               brew install protobuf postgresql@17 pgvector
               echo "/opt/homebrew/opt/postgresql@17/bin" >> $GITHUB_PATH

@@ -41,7 +41,7 @@ jobs:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             deps-script: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
             deps-script: brew install protobuf
 
